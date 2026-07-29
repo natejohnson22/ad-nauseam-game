@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/enemy_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"popup_grunt"
+display_name = "Popup Grunt"
+max_hp = 18.0
+speed = 68.0
+radius = 13.0
+engagement_value = 1
+contact_damage = 5.0
+contact_interval = 0.6
+behavior = "chase"
+aoe_interval = 3.5
+aoe_telegraph = 1.1
+aoe_radius = 95.0
+aoe_damage = 28.0
+color = Color(0.95, 0.75, 0.2, 1)

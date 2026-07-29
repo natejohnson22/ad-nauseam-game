@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/enemy_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"autoplay_ogre"
+display_name = "Autoplay Video Ogre"
+max_hp = 140.0
+speed = 38.0
+radius = 26.0
+engagement_value = 8
+contact_damage = 8.0
+contact_interval = 0.7
+behavior = "telegraph_aoe"
+aoe_interval = 3.5
+aoe_telegraph = 1.1
+aoe_radius = 95.0
+aoe_damage = 28.0
+color = Color(0.6, 0.2, 0.7, 1)

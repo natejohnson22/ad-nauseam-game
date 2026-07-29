@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/weapon_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"adblock_sword"
+display_name = "AdBlock+ Sword"
+kind = "melee"
+base_damage = 14.0
+cooldown = 0.85
+knockback = 90.0
+reach = 130.0
+arc_degrees = 100.0
+projectile_speed = 420.0
+travel_distance = 300.0
+projectile_count = 1
+color = Color(0.6, 1, 0.6, 1)
