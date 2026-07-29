@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ad-nauseam",
+      "runtimeExecutable": "/Applications/Godot_mono.app/Contents/MacOS/Godot",
+      "runtimeArgs": ["--path", "."],
+      "port": 6007
+    }
+  ]
+}
