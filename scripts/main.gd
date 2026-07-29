@@ -207,12 +207,7 @@ func _on_leveled_up(choices: Array) -> void:
 	_joystick.reset()
 
 	var modal := _make_modal(Color(0, 0, 0, 0.72))
-
-	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_CENTER)
-	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 18)
-	modal.add_child(box)
+	var box := _centered_box(modal, 18)
 
 	var title := _make_label("LEVEL UP — choose an upgrade", Vector2.ZERO)
 	title.add_theme_font_size_override("font_size", 28)
@@ -250,12 +245,7 @@ func _show_ad_break() -> void:
 	_joystick.reset()
 
 	var modal := _make_modal(Color(0, 0, 0, 0.92))
-
-	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_CENTER)
-	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 14)
-	modal.add_child(box)
+	var box := _centered_box(modal, 14)
 
 	var over := _make_label("GAME OVER", Vector2.ZERO)
 	over.add_theme_font_size_override("font_size", 40)
@@ -306,12 +296,7 @@ func _show_win() -> void:
 	_joystick.reset()
 
 	var modal := _make_modal(Color(0, 0.05, 0.1, 0.9))
-
-	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_CENTER)
-	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 16)
-	modal.add_child(box)
+	var box := _centered_box(modal, 16)
 
 	var win := _make_label("YOU SURVIVED", Vector2.ZERO)
 	win.add_theme_font_size_override("font_size", 40)
@@ -342,6 +327,20 @@ func _make_modal(bg: Color) -> Control:
 	modal.add_child(dim)
 	_ui.add_child(modal)
 	return modal
+
+## A VBox centered in the modal by its own size (a CenterContainer auto-centers
+## its child no matter how wide the content gets — unlike PRESET_CENTER, which
+## only pins the top-left corner to screen center).
+func _centered_box(modal: Control, separation: int) -> VBoxContainer:
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	modal.add_child(center)
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", separation)
+	center.add_child(box)
+	return box
 
 func _restart() -> void:
 	get_tree().paused = false
