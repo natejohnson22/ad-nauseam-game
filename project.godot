@@ -1,6 +1,10 @@
 ; Engine configuration file.
-; AD NAUSEAM — Prototype 1
-; Generated/maintained by hand; safe to open and re-save in the Godot editor.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
 
 config_version=5
 
@@ -24,9 +28,9 @@ window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation="landscape"
 
-[input_devices]
+[dotnet]
 
-pointing/emulate_touch_from_mouse=true
+project/assembly_name="Ad Nauseam"
 
 [input]
 
@@ -54,6 +58,10 @@ move_right={
 , Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194321,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
 ]
 }
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
 
 [layer_names]
 
