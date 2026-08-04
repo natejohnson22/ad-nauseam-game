@@ -1,4 +1,6 @@
 import Phaser from "phaser";
+import type { Upgrade } from "../content/upgrades";
+import type { RunOutcome } from "../systems/run";
 
 /**
  * Tier-2 signals — issue #7.
@@ -17,10 +19,20 @@ import Phaser from "phaser";
  * run leaks listeners across the boundary into the next one.
  */
 
-/** Slice 2 adds `xpChanged` and `leveledUp`. */
+/**
+ * Godot's four state signals, plus one.
+ *
+ * `runEnded` has no Godot counterpart — `main.gd` owns `_run_over` as a bare
+ * field and calls the screen directly. Splitting `Run` out as its own class
+ * (issue #7) is what makes an ending something to *announce*, and it carries
+ * the outcome because a win and a death are different screens in slice 3.
+ */
 export interface GameEventMap {
   healthChanged: [current: number, maximum: number];
   playerDied: [];
+  xpChanged: [current: number, needed: number, level: number];
+  leveledUp: [choices: readonly Upgrade[]];
+  runEnded: [outcome: RunOutcome];
 }
 
 /**

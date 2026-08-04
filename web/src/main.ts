@@ -11,7 +11,7 @@ import { GameScene } from "./scenes/game-scene";
 
    Gamepad input is opt-in in Phaser, unlike Godot where it is always polled;
    browsers additionally only expose pads after a user gesture. */
-new Phaser.Game({
+const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
   width: 1280,
@@ -24,3 +24,13 @@ new Phaser.Game({
   },
   scene: [GameScene],
 });
+
+/* Dev-only handle for slice 1's verification method. The agent preview browser
+   never fires requestAnimationFrame — `document.hidden` is permanently true, so
+   the game sits at frame 0 however long you wait — and driving
+   `game.step(t, 16.667)` from the console instead makes a run deterministic,
+   which turns "looks right" into arithmetic. Vite strips this branch from the
+   production bundle. */
+if (import.meta.env.DEV) {
+  (window as unknown as { game: Phaser.Game }).game = game;
+}
