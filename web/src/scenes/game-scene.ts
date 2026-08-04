@@ -5,6 +5,7 @@ import { WEAPONS } from "../content/weapons";
 import { Controls } from "../core/controls";
 import { EventBus, type GameBus } from "../core/event-bus";
 import { Pool } from "../core/pool";
+import { Boomerang } from "../entities/boomerang";
 import { Engagement } from "../entities/engagement";
 import { Enemy } from "../entities/enemy";
 import { Player } from "../entities/player";
@@ -38,6 +39,7 @@ export class GameScene extends Phaser.Scene {
   private player!: Player;
   private enemies!: Pool<Enemy>;
   private swings!: Pool<SwordSwing>;
+  private boomerangs!: Pool<Boomerang>;
   private drops!: Pool<Engagement>;
   private director!: SpawnDirector;
   private weapons!: WeaponManager;
@@ -61,6 +63,7 @@ export class GameScene extends Phaser.Scene {
 
     this.enemies = new Pool(this, Enemy);
     this.swings = new Pool(this, SwordSwing);
+    this.boomerangs = new Pool(this, Boomerang);
     this.drops = new Pool(this, Engagement);
 
     this.player = new Player(this, 0, 0, this.controls, this.bus);
@@ -71,8 +74,10 @@ export class GameScene extends Phaser.Scene {
       this.controls,
       this.enemies,
       this.swings,
+      this.boomerangs,
     );
     this.weapons.addWeapon("adblock_sword", WEAPONS.adblock_sword);
+    this.weapons.addWeapon("dnt_boomerang", WEAPONS.dnt_boomerang);
 
     this.progression = new Progression(
       this.player,
@@ -119,6 +124,7 @@ export class GameScene extends Phaser.Scene {
     this.enemies.each((enemy) => enemy.tick(dt));
     this.weapons.tick(dt);
     this.swings.each((swing) => swing.tick(dt));
+    this.boomerangs.each((boomerang) => boomerang.tick(dt));
     this.drops.each((drop) => drop.tick(dt));
   }
 

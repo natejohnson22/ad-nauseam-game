@@ -3,6 +3,7 @@ import type { Mutable, WeaponData } from "../content/types";
 import type { WeaponId } from "../content/weapons";
 import type { Controls } from "../core/controls";
 import type { Pool } from "../core/pool";
+import type { Boomerang } from "../entities/boomerang";
 import type { Enemy } from "../entities/enemy";
 import type { Player } from "../entities/player";
 import type { SwordSwing } from "../entities/sword-swing";
@@ -24,6 +25,9 @@ type RunWeapon = { id: WeaponId; data: Mutable<WeaponData>; cd: number };
  * service locator" seam, made explicit.
  */
 export class WeaponManager {
+  /** Degrees between the shots of a multi-projectile volley. */
+  private static readonly SPREAD_DEGREES = 16;
+
   /** Mutated by the cooldown upgrade in slice 2. */
   cooldownMult = 1;
 
@@ -35,6 +39,7 @@ export class WeaponManager {
     private readonly controls: Controls,
     private readonly enemies: Pool<Enemy>,
     private readonly swings: Pool<SwordSwing>,
+    private readonly boomerangs: Pool<Boomerang>,
   ) {}
 
   addWeapon(id: WeaponId, data: WeaponData): void {
@@ -66,16 +71,25 @@ export class WeaponManager {
       case "melee":
         weapon.data.arcDegrees += degrees;
         break;
+      // A ranged weapon has no arc to widen. Godot writes `d.arc_degrees +=`
+      // regardless, onto a field the boomerang carries and never reads; the
+      // union is what turns that into a case that must be stated.
+      case "ranged":
+        break;
     }
   }
 
-  /**
-   * Nothing has projectiles until slice 5 adds the boomerang, so this is
-   * deliberately empty rather than absent: `applyUpgrade`'s
-   * `weapon_projectile_add` arm is written now, and it needs somewhere to
-   * land. Slice 5 gives it a body — a `ranged` arm, exactly like `modArc`'s.
-   */
-  modProjectiles(_id: WeaponId, _count: number): void {}
+  modProjectiles(id: WeaponId, count: number): void {
+    const weapon = this.find(id);
+    if (weapon === undefined) return;
+    switch (weapon.data.kind) {
+      case "melee":
+        break;
+      case "ranged":
+        weapon.data.projectileCount += count;
+        break;
+    }
+  }
 
   private find(id: WeaponId): RunWeapon | undefined {
     return this.weapons.find((w) => w.id === id);
@@ -97,6 +111,22 @@ export class WeaponManager {
       case "melee":
         this.swings.obtain().spawn(data, dir, this.player, this.enemies);
         break;
+      case "ranged": {
+        // The fan is centred on the aim: one shot goes straight down it, two
+        // straddle it 8deg either side, and so on.
+        const count = Math.max(1, data.projectileCount);
+        for (let i = 0; i < count; i++) {
+          const spread = Phaser.Math.DegToRad(
+            WeaponManager.SPREAD_DEGREES * (i - (count - 1) * 0.5),
+          );
+          this.boomerangs
+            .obtain()
+            // Cloned: `aimDir` hands back a shared vector, and rotating it in
+            // place would compound the spread across the volley.
+            .spawn(data, dir.clone().rotate(spread), this.player, this.enemies);
+        }
+        break;
+      }
     }
   }
 

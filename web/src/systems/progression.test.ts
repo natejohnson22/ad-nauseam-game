@@ -167,6 +167,27 @@ describe("stack caps", () => {
     expect(bus.lastChoices().map((u) => u.id)).toEqual(["open"]);
   });
 
+  /**
+   * Slice 5's parity bar, asserted rather than played: all six shipped upgrades
+   * reach their caps, and a run that takes every one of them 25 times over ends
+   * with nothing left to offer. `main.gd` has no ceiling of its own — the pool
+   * emptying is the only thing that ends the choosing.
+   */
+  it("takes all six shipped upgrades to their caps and empties the pool", () => {
+    const { progression, bus } = build();
+    expect(UPGRADE_POOL).toHaveLength(6);
+
+    for (const upgrade of UPGRADE_POOL) {
+      for (let i = 0; i < upgrade.data.maxStacks; i++) {
+        progression.applyUpgrade(upgrade);
+      }
+      expect(progression.stacksOf(upgrade.id)).toBe(upgrade.data.maxStacks);
+    }
+
+    progression.addEngagement(5);
+    expect(bus.lastChoices()).toEqual([]);
+  });
+
   it("offers nothing once every upgrade is capped", () => {
     const only = entry("only", { maxStacks: 1 });
     const { progression, bus } = build([only]);
@@ -237,8 +258,8 @@ describe("upgrade-effect dispatch", () => {
         ["modArc", "adblock_sword", 25],
       ],
       [
-        { kind: "weapon_projectile_add", weapon: "adblock_sword", count: 1 },
-        ["modProjectiles", "adblock_sword", 1],
+        { kind: "weapon_projectile_add", weapon: "dnt_boomerang", count: 1 },
+        ["modProjectiles", "dnt_boomerang", 1],
       ],
     ];
 
@@ -281,6 +302,8 @@ describe("upgrade-effect dispatch", () => {
     expect(weapons.calls).toEqual([
       ["modDamage", "adblock_sword", 6],
       ["modArc", "adblock_sword", 25],
+      ["modDamage", "dnt_boomerang", 5],
+      ["modProjectiles", "dnt_boomerang", 1],
     ]);
     expect(hero.speedMult).toBeCloseTo(1.12, 10);
     expect(weapons.cooldownMult).toBeCloseTo(0.9, 10);

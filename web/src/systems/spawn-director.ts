@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { ENEMIES } from "../content/enemies";
+import type { EnemyData } from "../content/types";
 import type { Enemy, EnemyDeaths } from "../entities/enemy";
 import type { Player } from "../entities/player";
 import type { Pool } from "../core/pool";
@@ -13,16 +14,16 @@ import type { Pool } from "../core/pool";
  * is no longer anyone to notify (issue #7). All `main.gd` ever did with that
  * signal was reach through it to hook `died`, and that half survives as the
  * `EnemyDeaths` sink stamped onto each spawn.
- *
- * Slice 5 adds the ogre ramp — `OGRE_START_TIME` at 90s and its own interval
- * lerp. Only the grunt trickle exists here.
  */
 export class SpawnDirector {
   private static readonly SPAWN_RADIUS = 640;
   private static readonly RUN_LENGTH = 300;
+  /** No ogre before 1:30 — the first half of the run is grunts only. */
+  private static readonly OGRE_START_TIME = 90;
 
   private time = 0;
   private gruntCd = 0;
+  private ogreCd = SpawnDirector.OGRE_START_TIME;
   private running = false;
 
   constructor(
@@ -53,6 +54,20 @@ export class SpawnDirector {
       this.spawnGruntWave();
       this.gruntCd = this.gruntInterval();
     }
+
+    // Ported exactly as Godot has it, including the part that surprises:
+    // `_ogre_cd` is seeded to `OGRE_START_TIME` *and* only starts draining once
+    // that time has passed, so the first ogre lands at 3:00 rather than at the
+    // 1:30 `spawn_director.gd:5` advertises. Whether that is a Godot bug or the
+    // pacing that shipped is a feel call, and feel calls belong to the tuning
+    // pass — so it goes on that ticket's list rather than getting fixed here.
+    if (this.time >= SpawnDirector.OGRE_START_TIME) {
+      this.ogreCd -= delta;
+      if (this.ogreCd <= 0) {
+        this.spawn(ENEMIES.autoplay_ogre);
+        this.ogreCd = this.ogreInterval();
+      }
+    }
   }
 
   /** 2.2s between waves at the start, tightening to 0.7s by the 5-minute mark. */
@@ -69,18 +84,34 @@ export class SpawnDirector {
     return 3 + Math.floor(this.time / 45);
   }
 
+  /** 11s between ogres at 1:30, tightening to 5s by the 5-minute mark. */
+  private ogreInterval(): number {
+    const m = Phaser.Math.Clamp(
+      (this.time - SpawnDirector.OGRE_START_TIME) /
+        (SpawnDirector.RUN_LENGTH - SpawnDirector.OGRE_START_TIME),
+      0,
+      1,
+    );
+    return Phaser.Math.Linear(11, 5, m);
+  }
+
   private spawnGruntWave(): void {
     for (let i = 0; i < this.gruntWaveSize(); i++) {
-      const angle = Math.random() * Math.PI * 2;
-      this.enemies
-        .obtain()
-        .spawn(
-          ENEMIES.popup_grunt,
-          this.player.x + Math.cos(angle) * SpawnDirector.SPAWN_RADIUS,
-          this.player.y + Math.sin(angle) * SpawnDirector.SPAWN_RADIUS,
-          this.player,
-          this.deaths,
-        );
+      this.spawn(ENEMIES.popup_grunt);
     }
+  }
+
+  /** Somewhere on the ring around the player, at a uniform random angle. */
+  private spawn(data: EnemyData): void {
+    const angle = Math.random() * Math.PI * 2;
+    this.enemies
+      .obtain()
+      .spawn(
+        data,
+        this.player.x + Math.cos(angle) * SpawnDirector.SPAWN_RADIUS,
+        this.player.y + Math.sin(angle) * SpawnDirector.SPAWN_RADIUS,
+        this.player,
+        this.deaths,
+      );
   }
 }
