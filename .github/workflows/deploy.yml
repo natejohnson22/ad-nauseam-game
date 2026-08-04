@@ -1,0 +1,76 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  # Added by the amendment in issue #9: every slice lands as a PR, so the three
+  # gates have to run there. PRs build but never deploy.
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege by default; the deploy job widens it.
+permissions:
+  contents: read
+
+# Let a run finish rather than cancelling it mid-deploy, but never queue more
+# than one pending deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read # configure-pages reads the Pages settings to derive the URL
+    steps:
+      - uses: actions/checkout@v7
+
+      # pnpm before setup-node: setup-node's pnpm cache needs the binary to
+      # already exist. `corepack enable` does not carry into the runner.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.20.0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # All three gate the deploy. Typecheck is not redundant: `vite build`
+      # transpiles without typechecking, so type errors would ship silently.
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      # Pages steps are skipped on PRs: configure-pages touches repo Pages
+      # settings, and there is nothing to deploy from a PR anyway.
+      - if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
