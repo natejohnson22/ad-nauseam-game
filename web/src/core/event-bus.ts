@@ -26,12 +26,21 @@ import type { RunOutcome } from "../systems/run";
  * field and calls the screen directly. Splitting `Run` out as its own class
  * (issue #7) is what makes an ending something to *announce*, and it carries
  * the outcome because a win and a death are different screens in slice 3.
+ *
+ * `timeChanged` and `killsChanged` are the same story one level down. `main.gd`
+ * owns both the number and the `Label` and writes one into the other
+ * (`_update_timer_label`, `_update_kills`); here the HUD is a *different scene*
+ * from the one `Run` ticks in, so the only way it hears about either is the bus.
+ * `timeChanged` carries whole seconds, not `timeLeft`, because that is what the
+ * readout shows — so it fires 300 times a run rather than every frame.
  */
 export interface GameEventMap {
   healthChanged: [current: number, maximum: number];
   playerDied: [];
   xpChanged: [current: number, needed: number, level: number];
   leveledUp: [choices: readonly Upgrade[]];
+  timeChanged: [secondsLeft: number];
+  killsChanged: [kills: number];
   runEnded: [outcome: RunOutcome];
 }
 

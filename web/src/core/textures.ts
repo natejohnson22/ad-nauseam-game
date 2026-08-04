@@ -30,6 +30,29 @@ export function circleTexture(scene: Phaser.Scene, radius: number): string {
 }
 
 /**
+ * A filled white rectangle. Key: `rect:<width>:<height>`.
+ *
+ * The HUD's two bars, which are the one place a *scaled* sprite is right rather
+ * than a second bake: a fill whose width changes every time it is damaged would
+ * otherwise want a texture per pixel of width.
+ */
+export function rectTexture(
+  scene: Phaser.Scene,
+  width: number,
+  height: number,
+): string {
+  const key = `rect:${width}:${height}`;
+  if (scene.textures.exists(key)) return key;
+
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  g.fillStyle(0xffffff, 1);
+  g.fillRect(0, 0, width, height);
+  g.generateTexture(key, width, height);
+  g.destroy();
+  return key;
+}
+
+/**
  * A filled white wedge: the sword cleave, apex at the texture's centre, opening
  * toward +x. Key: `wedge:<reach>:<arcDegrees>`.
  *
