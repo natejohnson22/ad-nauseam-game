@@ -1,13 +1,14 @@
 import type { UpgradeData } from "./types";
 
 /**
- * Ported verbatim from `data/upgrades/*.tres`.
+ * Ported verbatim from `data/upgrades/*.tres`, in `main.gd`'s `_upgrade_pool`
+ * order — which is the pool's order, since `UPGRADE_POOL` is derived from this
+ * record rather than hand-listed.
  *
- * Slice 5 adds `boomerang_damage` and `boomerang_projectile` — they target
- * `dnt_boomerang`, which is not a `WeaponId` until that weapon exists, so the
- * `weapon` field would not typecheck today. Their *effects* are already
- * declared and already dispatched (see `UpgradeEffect`); only the two records
- * are missing, which is the whole point of writing all six arms up front.
+ * Slice 5's two boomerang records cost exactly what writing all six
+ * `UpgradeEffect` arms up front promised they would: two literals and no
+ * dispatch branch. `weapon_projectile_add` had been declared and dispatched
+ * since slice 2 with nothing to route to.
  */
 export const UPGRADES = {
   sword_damage: {
@@ -21,6 +22,18 @@ export const UPGRADES = {
     description: "+25° AdBlock+ Sword arc",
     effect: { kind: "weapon_arc_add", weapon: "adblock_sword", degrees: 25 },
     maxStacks: 4,
+  },
+  boomerang_damage: {
+    title: "Sharper Signal",
+    description: "+5 Do Not Track Boomerang damage",
+    effect: { kind: "weapon_damage_add", weapon: "dnt_boomerang", amount: 5 },
+    maxStacks: 6,
+  },
+  boomerang_projectile: {
+    title: "Multi-Track",
+    description: "+1 Do Not Track Boomerang",
+    effect: { kind: "weapon_projectile_add", weapon: "dnt_boomerang", count: 1 },
+    maxStacks: 3,
   },
   move_speed: {
     title: "Bandwidth Boost",

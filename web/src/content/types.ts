@@ -5,11 +5,11 @@
  * record keys rather than fields, and the variant fields (`kind`, `behavior`)
  * are discriminated unions so every dispatch switch is exhaustive.
  *
- * Only the variants slice 1 ships are declared. Slice 5 adds `ranged` weapons
- * and `telegraph_aoe` behaviour — and when it does, the compiler points at
- * exactly the switches that need a new arm, which is the whole reason these are
- * unions. Declaring dead variants up front would forfeit that — with one
- * deliberate exception, `UpgradeEffect`, which explains itself below.
+ * Slice 5 added the second arm of both content unions — `ranged` weapons and
+ * `telegraph_aoe` behaviour — and the bet paid: the compiler named every switch
+ * that needed a case (`Enemy#tick`, `WeaponManager#fire`, `#modArc`,
+ * `#modProjectiles`) rather than leaving them to be found by playing. Both
+ * unions are now complete for Prototype 1.
  */
 
 import type { WeaponId } from "./weapons";
@@ -19,8 +19,24 @@ export type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 // ------------------------------------------------------------------ enemies
 
-/** Godot: `enemy_data.gd`'s `behavior` enum plus the fields each branch reads. */
-export type EnemyBehavior = { readonly kind: "chase" };
+/**
+ * Godot: `enemy_data.gd`'s `behavior` enum plus the fields each branch reads.
+ *
+ * The four `aoe_*` numbers live on the `telegraph_aoe` arm rather than on
+ * `EnemyData`, which is what deletes them from the grunt: in the `.tres` files
+ * the Popup Grunt carries a full set of ogre defaults it never reads.
+ */
+export type EnemyBehavior =
+  | { readonly kind: "chase" }
+  | {
+      readonly kind: "telegraph_aoe";
+      /** Seconds between blasts, counted only while chasing. */
+      readonly interval: number;
+      /** Seconds the ring pulses before the blast lands — the player's cue. */
+      readonly telegraph: number;
+      readonly radius: number;
+      readonly damage: number;
+    };
 
 export interface EnemyData {
   readonly displayName: string;
@@ -57,7 +73,16 @@ export interface MeleeWeaponData extends WeaponBase {
   readonly arcDegrees: number;
 }
 
-export type WeaponData = MeleeWeaponData;
+export interface RangedWeaponData extends WeaponBase {
+  readonly kind: "ranged";
+  readonly projectileSpeed: number;
+  /** How far a shot flies before it turns around. */
+  readonly travelDistance: number;
+  /** Shots per fire, fanned 16deg apart. Raised by the multi-track upgrade. */
+  readonly projectileCount: number;
+}
+
+export type WeaponData = MeleeWeaponData | RangedWeaponData;
 
 // ----------------------------------------------------------------- upgrades
 

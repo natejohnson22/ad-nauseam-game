@@ -1,7 +1,7 @@
 import Phaser from "phaser";
-import type { EnemyData } from "../content/types";
+import type { EnemyBehavior, EnemyData } from "../content/types";
 import { PooledSprite } from "../core/pool";
-import { circleTexture } from "../core/textures";
+import { circleTexture, ringTexture } from "../core/textures";
 import type { Player } from "./player";
 
 /**
@@ -11,9 +11,6 @@ import type { Player } from "./player";
  *
  * Pooled, so **every** field below is reset in `spawn()`. A recycled sprite
  * remembers its last life; that is the whole hazard of the pooling story.
- *
- * Slice 5 adds the ogre's `telegraph_aoe` behaviour, at which point the switch
- * in `tick` stops being a single arm.
  */
 /**
  * Told when an enemy dies, so the kill can be counted and its engagement
@@ -34,10 +31,26 @@ export class Enemy extends PooledSprite {
   private static readonly PLACEHOLDER_RADIUS = 1;
   /** Rate `_flash` decays at, per second. */
   private static readonly FLASH_DECAY = 6;
+  /** The telegraph ring's stroke, `Color(1.0, 0.35, 0.1)` and 3px in Godot. */
+  private static readonly TELEGRAPH_COLOR = 0xff591a;
+  private static readonly TELEGRAPH_THICKNESS = 3;
+
+  /**
+   * A per-spawn identity, handed out monotonically.
+   *
+   * The sprite is not one: a pool hands the same object back out, so a `Map`
+   * keyed by `Enemy` — which is exactly what `boomerang.gd`'s `_hit_cd`
+   * dictionary is, keyed by node — would carry a dead enemy's hit cooldown onto
+   * whatever the pool recycled it into. Godot never had to answer this because
+   * `queue_free()` made the key unreachable.
+   */
+  private static nextSpawnId = 0;
 
   /** Named `archetype`, not `data`: `data` is Phaser's own DataManager slot. */
   archetype!: EnemyData;
   hp = 0;
+  /** Distinct per spawn — see `nextSpawnId`. Read by `Boomerang`. */
+  spawnId = -1;
 
   private player!: Player;
   private deaths!: EnemyDeaths;
@@ -46,11 +59,32 @@ export class Enemy extends PooledSprite {
   /** Last flash value pushed to the tint, so the tint is set only on change. */
   private tintedAt = -1;
 
+  /** `telegraph_aoe` only; `chase` enemies leave all three untouched. */
+  private aoeState: "idle" | "winding" = "idle";
+  private aoeCd = 0;
+  private aoeWind = 0;
+
+  /**
+   * The danger ring, drawn only while winding.
+   *
+   * A second sprite rather than part of the enemy's own, because Godot draws
+   * both in one `_draw` and Phaser sprites have no child transforms — the same
+   * reason `Player` carries its facing pip separately.
+   */
+  private readonly ring: Phaser.GameObjects.Sprite;
+
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0, circleTexture(scene, Enemy.PLACEHOLDER_RADIUS));
     // Above the player and the sword arc, matching Godot's tree order: the
     // director's enemies are added to World after the player subtree.
     this.setDepth(2);
+
+    this.ring = scene.add
+      .sprite(0, 0, ringTexture(scene, 1, Enemy.TELEGRAPH_THICKNESS))
+      // Above the swarm: a telegraph buried under grunts is not a warning.
+      .setDepth(2.5)
+      .setTint(Enemy.TELEGRAPH_COLOR)
+      .setVisible(false);
   }
 
   /** Re-initialise a recycled sprite. `setup()` + `_ready()` from Godot. */
@@ -68,6 +102,20 @@ export class Enemy extends PooledSprite {
     this.contactCd = 0;
     this.flash = 0;
     this.tintedAt = -1;
+    this.spawnId = Enemy.nextSpawnId++;
+
+    this.aoeState = "idle";
+    this.aoeWind = 0;
+    // `setup()`'s `_aoe_cd = d.aoe_interval`: an ogre chases for a full interval
+    // before its first wind-up, so it never blasts the moment it arrives.
+    this.aoeCd =
+      data.behavior.kind === "telegraph_aoe" ? data.behavior.interval : 0;
+    this.ring.setVisible(false);
+    if (data.behavior.kind === "telegraph_aoe") {
+      this.ring.setTexture(
+        ringTexture(this.scene, data.behavior.radius, Enemy.TELEGRAPH_THICKNESS),
+      );
+    }
 
     this.setPosition(x, y);
     // One baked texture per archetype radius, not one scaled texture: scaling a
@@ -77,9 +125,13 @@ export class Enemy extends PooledSprite {
   }
 
   tick(delta: number): void {
-    switch (this.archetype.behavior.kind) {
+    const behavior = this.archetype.behavior;
+    switch (behavior.kind) {
       case "chase":
         this.chase(delta);
+        break;
+      case "telegraph_aoe":
+        this.tickAoe(delta, behavior);
         break;
     }
 
@@ -98,6 +150,65 @@ export class Enemy extends PooledSprite {
       this.x += (dx / d) * this.archetype.speed * delta;
       this.y += (dy / d) * this.archetype.speed * delta;
     }
+  }
+
+  /**
+   * The Autoplay Video Ogre's two-state machine: chase while `IDLE`, plant and
+   * telegraph while `WINDING`, then blast whatever is still inside the ring.
+   *
+   * The wind-up is the whole enemy — it is slow (38px/s against the player's
+   * 220) and its damage is a third of the player's health, so the only thing
+   * making it fair is that the ring says exactly where and exactly when.
+   */
+  private tickAoe(
+    delta: number,
+    behavior: Extract<EnemyBehavior, { kind: "telegraph_aoe" }>,
+  ): void {
+    if (this.aoeState === "idle") {
+      this.chase(delta);
+      this.aoeCd -= delta;
+      if (this.aoeCd <= 0) {
+        this.aoeState = "winding";
+        this.aoeWind = behavior.telegraph;
+      }
+      return;
+    }
+
+    this.aoeWind -= delta;
+    if (this.aoeWind <= 0) {
+      this.blast(behavior);
+      this.aoeState = "idle";
+      this.aoeCd = behavior.interval;
+      this.ring.setVisible(false);
+      return;
+    }
+
+    // Brightening as the blast nears, per `_draw`. The ring is re-positioned
+    // every frame despite the ogre being planted: `takeDamage`'s knockback
+    // teleports it mid-wind, and a ring left behind would lie about the blast.
+    const t = 1 - this.aoeWind / Math.max(0.01, behavior.telegraph);
+    this.ring
+      .setPosition(this.x, this.y)
+      .setAlpha(0.35 + 0.4 * t)
+      .setVisible(true);
+  }
+
+  private blast(
+    behavior: Extract<EnemyBehavior, { kind: "telegraph_aoe" }>,
+  ): void {
+    const d = Phaser.Math.Distance.Between(
+      this.x,
+      this.y,
+      this.player.x,
+      this.player.y,
+    );
+    if (d <= behavior.radius) this.player.takeDamage(behavior.damage);
+  }
+
+  /** Takes the ring with it — the pool only knows about the sprite itself. */
+  override release(): void {
+    this.ring.setVisible(false);
+    super.release();
   }
 
   private tryContact(): void {
