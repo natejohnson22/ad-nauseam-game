@@ -23,7 +23,7 @@ export class SpawnDirector {
 
   private time = 0;
   private gruntCd = 0;
-  private ogreCd = SpawnDirector.OGRE_START_TIME;
+  private ogreCd = 0;
   private running = false;
 
   constructor(
@@ -55,12 +55,12 @@ export class SpawnDirector {
       this.gruntCd = this.gruntInterval();
     }
 
-    // Ported exactly as Godot has it, including the part that surprises:
-    // `_ogre_cd` is seeded to `OGRE_START_TIME` *and* only starts draining once
-    // that time has passed, so the first ogre lands at 3:00 rather than at the
-    // 1:30 `spawn_director.gd:5` advertises. Whether that is a Godot bug or the
-    // pacing that shipped is a feel call, and feel calls belong to the tuning
-    // pass — so it goes on that ticket's list rather than getting fixed here.
+    // Deliberately *not* Godot's behaviour. `spawn_director.gd:28` seeds
+    // `_ogre_cd` to `OGRE_START_TIME` *and* only drains it after that time has
+    // passed, so Godot's first ogre lands at 3:00 rather than the 1:30 its own
+    // comment at `spawn_director.gd:5` advertises. The tuning pass judged the
+    // 1:30–3:00 stretch as dead air and took the documented pacing: seeding to
+    // zero makes the first ogre land at exactly 1:30.
     if (this.time >= SpawnDirector.OGRE_START_TIME) {
       this.ogreCd -= delta;
       if (this.ogreCd <= 0) {
