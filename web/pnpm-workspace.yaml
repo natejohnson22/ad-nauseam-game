@@ -1,0 +1,9 @@
+# NOT a workspace. pnpm 11 moved its settings out of package.json's "pnpm" key
+# and into this file, so it exists purely to carry settings. There is no
+# `packages:` key — that is what would make this a workspace root, and issue #6
+# settled `web/` as a standalone project.
+
+# esbuild (via Vite) needs its postinstall to place the platform binary.
+# Declared explicitly so CI never hits pnpm's interactive approve-builds prompt.
+allowBuilds:
+  esbuild: true
