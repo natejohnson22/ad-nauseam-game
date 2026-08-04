@@ -33,6 +33,14 @@ import type { RunOutcome } from "../systems/run";
  * from the one `Run` ticks in, so the only way it hears about either is the bus.
  * `timeChanged` carries whole seconds, not `timeLeft`, because that is what the
  * readout shows — so it fires 300 times a run rather than every frame.
+ *
+ * `inputEnabled` is the one event Godot replaces with a direct call: `main.gd`
+ * holds the joystick and calls `_joystick.reset()` at each of its three modal
+ * openings. Here the joystick is in `HudScene` and the modals are DOM, so that
+ * reset crosses two boundaries — hence an announcement rather than a reach-in
+ * (slice 4). It carries a boolean rather than being a bare "cancel" because a
+ * paused `GameScene` does not stop `HudScene` from hearing pointer events: the
+ * stick has to be held off for the modal's duration, not merely emptied once.
  */
 export interface GameEventMap {
   healthChanged: [current: number, maximum: number];
@@ -42,6 +50,7 @@ export interface GameEventMap {
   timeChanged: [secondsLeft: number];
   killsChanged: [kills: number];
   runEnded: [outcome: RunOutcome];
+  inputEnabled: [enabled: boolean];
 }
 
 /**

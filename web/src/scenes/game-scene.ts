@@ -104,7 +104,7 @@ export class GameScene extends Phaser.Scene {
 
     // Queued, so the HUD's `create` runs a step after this one — see the note
     // there about why it seeds its own opening values.
-    this.scene.launch(HudScene.KEY, { bus: this.bus });
+    this.scene.launch(HudScene.KEY, { bus: this.bus, controls: this.controls });
     this.director.start();
   }
 
@@ -150,13 +150,18 @@ export class GameScene extends Phaser.Scene {
    * still fires with this scene stopped. That is the half of issue #8's
    * decision that matters here: a canvas modal would need something still
    * running to be clickable at all.
+   *
+   * `inputEnabled` is `_joystick.reset()`: a thumb held down when the level-up
+   * fires must not leave the player drifting on resume (slice 4).
    */
   private openLevelUp(choices: readonly Upgrade[]): void {
     if (choices.length === 0 || this.run.isOver) return;
     this.scene.pause();
+    this.bus.emit("inputEnabled", false);
     this.levelUpModal.show(choices, (upgrade) => {
       this.progression.applyUpgrade(upgrade);
       this.levelUpModal.hide();
+      this.bus.emit("inputEnabled", true);
       this.scene.resume();
     });
   }
@@ -172,6 +177,7 @@ export class GameScene extends Phaser.Scene {
     // A level-up and the last hit can land on the same frame.
     this.levelUpModal.hide();
     this.scene.pause();
+    this.bus.emit("inputEnabled", false);
 
     const restart = (): void => this.restart();
     if (outcome === "won") this.winScreen.show(this.run.kills, restart);

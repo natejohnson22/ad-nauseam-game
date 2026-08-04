@@ -1,9 +1,11 @@
 import Phaser from "phaser";
+import type { Controls } from "../core/controls";
 import type { GameBus } from "../core/event-bus";
 import { rectTexture } from "../core/textures";
 import { Player } from "../entities/player";
 import { Progression } from "../systems/progression";
 import { Run } from "../systems/run";
+import { VirtualJoystick } from "../ui/virtual-joystick";
 
 /**
  * The always-running UI scene from issue #7, reduced by issue #8 to exactly one
@@ -17,6 +19,11 @@ import { Run } from "../systems/run";
  *
  * **It never touches `GameScene`.** Everything it draws arrives on the bus, so
  * a HUD that renders a stale value is a missing `emit`, not a missing poll.
+ *
+ * Slice 4 adds the one thing here that is not a readout: the virtual joystick.
+ * It belongs to this scene for the same reason the HUD does — it has to keep
+ * receiving input while `GameScene` is paused, or a press during a modal would
+ * be swallowed rather than ignored.
  */
 export class HudScene extends Phaser.Scene {
   static readonly KEY = "HudScene";
@@ -40,6 +47,8 @@ export class HudScene extends Phaser.Scene {
   } as const;
 
   private bus!: GameBus;
+  private controls!: Controls;
+  private joystick!: VirtualJoystick;
   private hpFill!: Phaser.GameObjects.Sprite;
   private xpFill!: Phaser.GameObjects.Sprite;
   private levelLabel!: Phaser.GameObjects.Text;
@@ -50,8 +59,9 @@ export class HudScene extends Phaser.Scene {
     super({ key: HudScene.KEY, active: false });
   }
 
-  init(data: { bus: GameBus }): void {
+  init(data: { bus: GameBus; controls: Controls }): void {
     this.bus = data.bus;
+    this.controls = data.controls;
   }
 
   create(): void {
@@ -83,6 +93,11 @@ export class HudScene extends Phaser.Scene {
     this.bus.on("killsChanged", (kills) => {
       this.killsLabel.setText(`Kills: ${kills}`);
     });
+
+    /* Last, so it draws over the readouts — `main.gd` adds it to `_ui` last for
+       the same reason. */
+    this.joystick = new VirtualJoystick(this, this.controls);
+    this.bus.on("inputEnabled", (enabled) => this.joystick.setEnabled(enabled));
   }
 
   /**
