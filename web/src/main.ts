@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { GameScene } from "./scenes/game-scene";
+import { HudScene } from "./scenes/hud-scene";
 
 /* Matches the Godot project's viewport (project.godot: 1280x720, stretch
    "canvas_items" / aspect "expand"). FIT + CENTER_BOTH is the closest Phaser
@@ -22,7 +23,10 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [GameScene],
+  /* Only the first entry auto-starts; `HudScene` is listed so it is registered
+     (and, being second, renders above the game) but is launched by `GameScene`
+     with that run's bus. */
+  scene: [GameScene, HudScene],
 });
 
 /* Dev-only handle for slice 1's verification method. The agent preview browser

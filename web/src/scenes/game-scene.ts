@@ -10,11 +10,14 @@ import { Enemy } from "../entities/enemy";
 import { Player } from "../entities/player";
 import { SwordSwing } from "../entities/sword-swing";
 import { Progression } from "../systems/progression";
-import { Run } from "../systems/run";
+import { Run, type RunOutcome } from "../systems/run";
 import { SpawnDirector } from "../systems/spawn-director";
 import { WeaponManager } from "../systems/weapon-manager";
+import { AdBreak } from "../ui/ad-break";
 import { LevelUpModal } from "../ui/level-up-modal";
 import { Overlay } from "../ui/overlay";
+import { WinScreen } from "../ui/win-screen";
+import { HudScene } from "./hud-scene";
 
 /**
  * The composition root — issue #7. Thin by design: it creates the systems, owns
@@ -22,10 +25,10 @@ import { Overlay } from "../ui/overlay";
  * in a fixed order. It also stands in for `main.gd`'s wiring, which is why the
  * two small sinks (`onEnemyDied`, `onEngagementCollected`) live here.
  *
- * Slice 2 closes the pick-under-pressure loop: kills drop engagement, engagement
- * levels you up, the scene pauses, and the pick lands on the player or the
- * weapon. The HUD, the run clock, and the win/lose screens are slice 3 — `Run`
- * ticks underneath all of them already, it just has nothing to draw itself on.
+ * Slice 3 closes the run: the parallel `HudScene` draws the readouts, and both
+ * endings land on a DOM screen whose button restarts this scene in place —
+ * `reload_current_scene()`'s replacement, and the reason `create` builds every
+ * per-run object (bus included) rather than reusing anything.
  */
 export class GameScene extends Phaser.Scene {
   static readonly KEY = "GameScene";
@@ -42,6 +45,8 @@ export class GameScene extends Phaser.Scene {
   private run!: Run;
   private overlay!: Overlay;
   private levelUpModal!: LevelUpModal;
+  private winScreen!: WinScreen;
+  private adBreak!: AdBreak;
 
   constructor() {
     super(GameScene.KEY);
@@ -80,18 +85,26 @@ export class GameScene extends Phaser.Scene {
 
     this.overlay = new Overlay(this.game);
     this.levelUpModal = new LevelUpModal(this.overlay);
+    this.winScreen = new WinScreen(this.overlay);
+    this.adBreak = new AdBreak(this.overlay);
 
     this.bus.on("leveledUp", (choices) => this.openLevelUp(choices));
     this.bus.on("playerDied", () => this.run.end("lost"));
-    // Slice 3 replaces this with the real end screens. Until then, ending just
-    // stops the escalation so the recycling is observable at rest.
-    this.bus.on("runEnded", () => this.director.stop());
+    this.bus.on("runEnded", (outcome) => this.endRun(outcome));
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.bus.destroy();
+      this.levelUpModal.hide();
+      this.winScreen.hide();
+      // Also stops the countdown's interval, which nothing else would.
+      this.adBreak.hide();
       this.overlay.destroy();
+      this.scene.stop(HudScene.KEY);
     });
 
+    // Queued, so the HUD's `create` runs a step after this one — see the note
+    // there about why it seeds its own opening values.
+    this.scene.launch(HudScene.KEY, { bus: this.bus });
     this.director.start();
   }
 
@@ -146,5 +159,36 @@ export class GameScene extends Phaser.Scene {
       this.levelUpModal.hide();
       this.scene.resume();
     });
+  }
+
+  /**
+   * Both endings, in `main.gd`'s order: stop the world, then put a screen over
+   * it. Stopping the director matters beyond tidiness — the scene is paused, so
+   * a wave queued for this frame would otherwise be waiting on the far side of
+   * a restart that never happens.
+   */
+  private endRun(outcome: RunOutcome): void {
+    this.director.stop();
+    // A level-up and the last hit can land on the same frame.
+    this.levelUpModal.hide();
+    this.scene.pause();
+
+    const restart = (): void => this.restart();
+    if (outcome === "won") this.winScreen.show(this.run.kills, restart);
+    else this.adBreak.show(restart);
+  }
+
+  /**
+   * `_restart`, without `reload_current_scene()`. Phaser has no direct
+   * equivalent, but it does not need one: restarting this scene tears it down
+   * through `SHUTDOWN` and runs `create` again, and every per-run object —
+   * bus, controls, pools, systems, overlay — is built there. Nothing survives
+   * the boundary, which is the property `reload_current_scene()` was bought for.
+   *
+   * `resume` first because a stopped-while-paused scene starts back up paused.
+   */
+  private restart(): void {
+    this.scene.resume();
+    this.scene.restart();
   }
 }
