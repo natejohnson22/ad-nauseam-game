@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { ENEMIES } from "../content/enemies";
-import type { Enemy } from "../entities/enemy";
+import type { Enemy, EnemyDeaths } from "../entities/enemy";
 import type { Player } from "../entities/player";
 import type { Pool } from "../core/pool";
 
@@ -10,7 +10,9 @@ import type { Pool } from "../core/pool";
  * just frames a slice of it.
  *
  * `enemy_spawned` is gone: the director owns the pool it spawns into, so there
- * is no longer anyone to notify (issue #7).
+ * is no longer anyone to notify (issue #7). All `main.gd` ever did with that
+ * signal was reach through it to hook `died`, and that half survives as the
+ * `EnemyDeaths` sink stamped onto each spawn.
  *
  * Slice 5 adds the ogre ramp — `OGRE_START_TIME` at 90s and its own interval
  * lerp. Only the grunt trickle exists here.
@@ -26,6 +28,12 @@ export class SpawnDirector {
   constructor(
     private readonly enemies: Pool<Enemy>,
     private readonly player: Player,
+    /**
+     * Carried, not consumed: the director never hears about a death, but it is
+     * the only thing that spawns enemies, so it is where the sink is stamped
+     * onto each one. This is what is left of `enemy_spawned`.
+     */
+    private readonly deaths: EnemyDeaths,
   ) {}
 
   start(): void {
@@ -71,6 +79,7 @@ export class SpawnDirector {
           this.player.x + Math.cos(angle) * SpawnDirector.SPAWN_RADIUS,
           this.player.y + Math.sin(angle) * SpawnDirector.SPAWN_RADIUS,
           this.player,
+          this.deaths,
         );
     }
   }

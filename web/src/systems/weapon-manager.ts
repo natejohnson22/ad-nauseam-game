@@ -10,8 +10,8 @@ import type { SwordSwing } from "../entities/sword-swing";
 /**
  * A weapon's per-run copy — Godot's `data.duplicate()`, so level-up upgrades
  * mutate this run's numbers and never the content module. `id` is carried
- * alongside rather than inside, because ids are record keys now (issue #3);
- * slice 2's upgrade hooks are what look weapons up by it.
+ * alongside rather than inside, because ids are record keys now (issue #3) —
+ * and the `mod_*` upgrade hooks are what look weapons up by it.
  */
 type RunWeapon = { id: WeaponId; data: Mutable<WeaponData>; cd: number };
 
@@ -40,6 +40,45 @@ export class WeaponManager {
   addWeapon(id: WeaponId, data: WeaponData): void {
     // 0.15s so the first swing lands almost immediately, as in Godot.
     this.weapons.push({ id, data: { ...data }, cd: 0.15 });
+  }
+
+  // ------------------------------------------- upgrade hooks (Progression)
+  //
+  // Each mirrors a `mod_*` in `weapon_manager.gd`, including its shrug at an
+  // id that is not equipped: taking a boomerang upgrade before owning the
+  // boomerang is a no-op, not an error. They mutate the run copy made in
+  // `addWeapon`, never the content module.
+
+  modDamage(id: WeaponId, amount: number): void {
+    const weapon = this.find(id);
+    if (weapon !== undefined) weapon.data.baseDamage += amount;
+  }
+
+  modCooldownMult(id: WeaponId, mult: number): void {
+    const weapon = this.find(id);
+    if (weapon !== undefined) weapon.data.cooldown *= mult;
+  }
+
+  modArc(id: WeaponId, degrees: number): void {
+    const weapon = this.find(id);
+    if (weapon === undefined) return;
+    switch (weapon.data.kind) {
+      case "melee":
+        weapon.data.arcDegrees += degrees;
+        break;
+    }
+  }
+
+  /**
+   * Nothing has projectiles until slice 5 adds the boomerang, so this is
+   * deliberately empty rather than absent: `applyUpgrade`'s
+   * `weapon_projectile_add` arm is written now, and it needs somewhere to
+   * land. Slice 5 gives it a body — a `ranged` arm, exactly like `modArc`'s.
+   */
+  modProjectiles(_id: WeaponId, _count: number): void {}
+
+  private find(id: WeaponId): RunWeapon | undefined {
+    return this.weapons.find((w) => w.id === id);
   }
 
   tick(delta: number): void {

@@ -15,6 +15,20 @@ import type { Player } from "./player";
  * Slice 5 adds the ogre's `telegraph_aoe` behaviour, at which point the switch
  * in `tick` stops being a single arm.
  */
+/**
+ * Told when an enemy dies, so the kill can be counted and its engagement
+ * dropped. `GameScene` implements it.
+ *
+ * This is the surviving half of Godot's `enemy_spawned` -> `died` wiring: the
+ * director owning the pool killed the *spawn* signal (issue #7), but somebody
+ * outside the pool still has to hear about deaths. A field set on every
+ * `spawn()` rather than a listener, because a listener on a recycled sprite is
+ * the pooling bug this whole split exists to prevent.
+ */
+export interface EnemyDeaths {
+  onEnemyDied(enemy: Enemy): void;
+}
+
 export class Enemy extends PooledSprite {
   /** Placeholder texture; `spawn` swaps in the one matching the archetype. */
   private static readonly PLACEHOLDER_RADIUS = 1;
@@ -26,6 +40,7 @@ export class Enemy extends PooledSprite {
   hp = 0;
 
   private player!: Player;
+  private deaths!: EnemyDeaths;
   private contactCd = 0;
   private flash = 0;
   /** Last flash value pushed to the tint, so the tint is set only on change. */
@@ -39,10 +54,17 @@ export class Enemy extends PooledSprite {
   }
 
   /** Re-initialise a recycled sprite. `setup()` + `_ready()` from Godot. */
-  spawn(data: EnemyData, x: number, y: number, player: Player): void {
+  spawn(
+    data: EnemyData,
+    x: number,
+    y: number,
+    player: Player,
+    deaths: EnemyDeaths,
+  ): void {
     this.archetype = data;
     this.hp = data.maxHp;
     this.player = player;
+    this.deaths = deaths;
     this.contactCd = 0;
     this.flash = 0;
     this.tintedAt = -1;
@@ -112,7 +134,10 @@ export class Enemy extends PooledSprite {
     }
 
     if (this.hp <= 0) {
+      // Released first, so the drop that lands on this position is not competing
+      // with a sprite the pool is about to hand back out.
       this.release();
+      this.deaths.onEnemyDied(this);
     } else {
       this.refreshTint();
     }

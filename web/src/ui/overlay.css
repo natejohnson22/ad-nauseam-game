@@ -1,0 +1,92 @@
+/* The modal overlay — issue #8's DOM half.
+
+   Everything in here is authored in `main.gd`'s 1280x720 coordinates. The one
+   transform in `overlay.ts` maps that box onto the canvas's letterboxed
+   on-screen rect, so nothing below ever thinks about scaling. */
+
+#ui-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1280px;
+  height: 720px;
+  transform-origin: top left;
+  /* Transparent to the mouse until a modal opens; each modal opts back in. */
+  pointer-events: none;
+  font-family: system-ui, sans-serif;
+  color: #fff;
+}
+
+/* `_make_label`'s 4px black outline, as four offset shadows. */
+#ui-overlay .modal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  text-align: center;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.72);
+  text-shadow:
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
+}
+
+#ui-overlay .modal h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+#ui-overlay .choices {
+  display: flex;
+  gap: 16px;
+}
+
+/* `main.gd`'s 230x150 Button, which is the number that ports; the rest is what
+   a VBoxContainer used to do for free. */
+#ui-overlay .choice {
+  width: 230px;
+  min-height: 150px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  background: #24242c;
+  border: 1px solid #3d3d48;
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+#ui-overlay .choice:hover {
+  transform: translateY(-4px);
+  background: #2e2e38;
+  border-color: #6ec6ff;
+}
+
+#ui-overlay .choice:focus-visible {
+  outline: 2px solid #6ec6ff;
+  outline-offset: 3px;
+}
+
+#ui-overlay .choice b {
+  font-size: 19px;
+}
+
+#ui-overlay .choice span {
+  font-size: 14px;
+  opacity: 0.8;
+  line-height: 1.35;
+}
