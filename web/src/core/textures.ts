@@ -30,6 +30,33 @@ export function circleTexture(scene: Phaser.Scene, radius: number): string {
 }
 
 /**
+ * A white circle outline of the given radius, stroked `thickness` px wide and
+ * centred on the stroke (Godot's `draw_arc` semantics). Key:
+ * `ring:<radius>:<thickness>`.
+ *
+ * The texture is a touch larger than `circleTexture`'s so the outer half of the
+ * stroke is not clipped; the sprite's centre is still the circle's centre, so
+ * positioning is the same as the filled version.
+ */
+export function ringTexture(
+  scene: Phaser.Scene,
+  radius: number,
+  thickness: number,
+): string {
+  const key = `ring:${radius}:${thickness}`;
+  if (scene.textures.exists(key)) return key;
+
+  const half = thickness / 2;
+  const size = (radius + half) * 2;
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  g.lineStyle(thickness, 0xffffff, 1);
+  g.strokeCircle(radius + half, radius + half, radius);
+  g.generateTexture(key, size, size);
+  g.destroy();
+  return key;
+}
+
+/**
  * A filled white rectangle. Key: `rect:<width>:<height>`.
  *
  * The HUD's two bars, which are the one place a *scaled* sprite is right rather

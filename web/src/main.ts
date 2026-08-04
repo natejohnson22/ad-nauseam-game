@@ -18,7 +18,13 @@ const game = new Phaser.Game({
   width: 1280,
   height: 720,
   backgroundColor: "#4d4d4d",
-  input: { gamepad: true },
+  /* `touch` is declared rather than left to Phaser, whose default is the
+     browser's own touch detection — false in any desktop-shaped runtime,
+     including the agent preview browser, and the thing that would silently
+     leave slice 4's joystick mouse-only on a device that reports oddly.
+     Listening for touch events on a machine that never fires them costs
+     nothing. */
+  input: { gamepad: true, touch: true },
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
