@@ -8,5 +8,8 @@ bin/
 obj/
 *.mono.*
 
+# Agent worktrees — scratch clones, never part of the repo
+.claude/worktrees/
+
 # OS cruft
 .DS_Store
