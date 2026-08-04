@@ -1,13 +1,3 @@
-# Godot 4+ editor/import cache (regenerated on open)
-.godot/
-
-# Godot .NET / Mono build artifacts (unused now — GDScript only — but safe)
-.mono/
-data_*/
-bin/
-obj/
-*.mono.*
-
 # Agent worktrees — scratch clones, never part of the repo
 .claude/worktrees/
 
