@@ -13,16 +13,23 @@ import type { Player } from "./player";
  * remembers its last life; that is the whole hazard of the pooling story.
  */
 /**
- * Told when an enemy dies, so the kill can be counted and its engagement
- * dropped. `GameScene` implements it.
+ * Told when an enemy is hurt or dies — so the damage can be totted up and
+ * floated, and the kill counted and its engagement dropped. `GameScene`
+ * implements it.
  *
- * This is the surviving half of Godot's `enemy_spawned` -> `died` wiring: the
- * director owning the pool killed the *spawn* signal (issue #7), but somebody
- * outside the pool still has to hear about deaths. A field set on every
- * `spawn()` rather than a listener, because a listener on a recycled sprite is
- * the pooling bug this whole split exists to prevent.
+ * The death half is the surviving piece of Godot's `enemy_spawned` -> `died`
+ * wiring: the director owning the pool killed the *spawn* signal (issue #7),
+ * but somebody outside the pool still has to hear about deaths. A field set on
+ * every `spawn()` rather than a listener, because a listener on a recycled
+ * sprite is the pooling bug this whole split exists to prevent — which is
+ * exactly why `onEnemyDamaged` joins it here rather than riding the bus
+ * (issue #25). Per-hit is the highest-frequency signal in the game; it belongs
+ * on the direct call, not the announcement channel.
  */
-export interface EnemyDeaths {
+export interface EnemyEvents {
+  /** `amount` is what the weapon dealt, **not** what the enemy could absorb —
+      the last hit on a grunt reports the whole swing. See `takeDamage`. */
+  onEnemyDamaged(enemy: Enemy, amount: number): void;
   onEnemyDied(enemy: Enemy): void;
 }
 
@@ -53,7 +60,7 @@ export class Enemy extends PooledSprite {
   spawnId = -1;
 
   private player!: Player;
-  private deaths!: EnemyDeaths;
+  private events!: EnemyEvents;
   private contactCd = 0;
   private flash = 0;
   /** Last flash value pushed to the tint, so the tint is set only on change. */
@@ -93,12 +100,12 @@ export class Enemy extends PooledSprite {
     x: number,
     y: number,
     player: Player,
-    deaths: EnemyDeaths,
+    events: EnemyEvents,
   ): void {
     this.archetype = data;
     this.hp = data.maxHp;
     this.player = player;
-    this.deaths = deaths;
+    this.events = events;
     this.contactCd = 0;
     this.flash = 0;
     this.tintedAt = -1;
@@ -224,6 +231,13 @@ export class Enemy extends PooledSprite {
    * Called by weapons. `knockbackFrom` is the source position the knockback
    * pushes away from — a position teleport, exactly as in Godot, which is one
    * of the reasons a velocity-driven physics body was rejected.
+   *
+   * The single funnel every hit in the game passes through, which is why the
+   * damage report lives here rather than at the two weapon call sites
+   * (issue #25). It reports `amount` — what the weapon dealt — and not the HP
+   * actually removed: a maxed sword reads 500 on the grunt that had 180 left,
+   * because the number the player sees and the number the run totals must be
+   * the same number, and the one worth watching is the build's output.
    */
   takeDamage(
     amount: number,
@@ -244,11 +258,16 @@ export class Enemy extends PooledSprite {
       }
     }
 
+    // After the knockback, so the number pops where the enemy actually ended up
+    // rather than where it was standing; before the death branch, so the killing
+    // blow is shown and counted like every other hit.
+    this.events.onEnemyDamaged(this, amount);
+
     if (this.hp <= 0) {
       // Released first, so the drop that lands on this position is not competing
       // with a sprite the pool is about to hand back out.
       this.release();
-      this.deaths.onEnemyDied(this);
+      this.events.onEnemyDied(this);
     } else {
       this.refreshTint();
     }

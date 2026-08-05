@@ -4,6 +4,17 @@ import type { GameBus } from "../core/event-bus";
 export type RunOutcome = "won" | "lost";
 
 /**
+ * The tally both end screens report (issue #25). A single object rather than
+ * two arguments, because the win screen and the ad break show the same pair and
+ * a positional `(kills, damage)` at two call sites is one transposition away
+ * from a wrong summary that nothing would catch.
+ */
+export interface RunStats {
+  readonly kills: number;
+  readonly damage: number;
+}
+
+/**
  * The run's own state — the third of `main.gd`'s three jobs, extracted as a
  * plain Phaser-free class (issue #7).
  *
@@ -18,6 +29,8 @@ export class Run {
 
   timeLeft = Run.LENGTH;
   kills = 0;
+  /** Every point the player's weapons dealt, overkill included (issue #25). */
+  damageDealt = 0;
 
   private outcome: RunOutcome | null = null;
   /** The last value `timeChanged` announced — `main.gd`'s `int(ceil(...))`. */
@@ -32,6 +45,11 @@ export class Run {
   /** `null` until the run ends; then why it ended. */
   get result(): RunOutcome | null {
     return this.outcome;
+  }
+
+  /** What the end screens report. */
+  get stats(): RunStats {
+    return { kills: this.kills, damage: this.damageDealt };
   }
 
   /** Whole seconds remaining, as the readout shows them. */
@@ -49,6 +67,22 @@ export class Run {
       this.bus.emit("timeChanged", this.announcedSeconds);
     }
     if (this.timeLeft === 0) this.end("won");
+  }
+
+  /**
+   * Bank one weapon hit. `amount` is what the weapon dealt, not the HP removed
+   * — see `Enemy.takeDamage`.
+   *
+   * Announced on every hit, which is thousands of times a run, unlike its
+   * neighbours here. That is deliberate: this class stays a plain accumulator
+   * with no notion of a refresh rate, and `HudScene` throttles its own redraw.
+   * A throttle here would put a UI concern inside the run state and make these
+   * tests care about wall-clock timing.
+   */
+  recordDamage(amount: number): void {
+    if (this.isOver) return;
+    this.damageDealt += amount;
+    this.bus.emit("damageChanged", this.damageDealt);
   }
 
   recordKill(): void {

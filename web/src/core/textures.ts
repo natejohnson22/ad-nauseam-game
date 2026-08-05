@@ -120,3 +120,57 @@ export function wedgeTexture(
   g.destroy();
   return key;
 }
+
+/**
+ * A damage number, baked as a texture. Key: `number:<value>`.
+ *
+ * The one text in the game that is not a `Text` object, and deliberately
+ * (issue #25). A sword cleave damages every enemy in its wedge on a single
+ * frame, so a big swing spawns twenty floaters at once, several times a second,
+ * on mobile too. Each `Text` owns a canvas that re-uploads on `setText` and
+ * binds its own texture at draw time; twenty of them is twenty uploads and
+ * twenty draw calls. Baked once per distinct value, a floater is an ordinary
+ * tinted `Sprite` like everything else here, and the whole burst batches.
+ *
+ * That trade is only available because damage is **deterministic** — no crits,
+ * no rolls — so the distinct values are a fixed handful (the sword's 140..500
+ * in steps of 60, the boomerang's 100..400 in steps of 50) and the cache stops
+ * growing early. A variance mechanic would make values effectively continuous
+ * and would have to revisit this.
+ *
+ * Digits bake **white on a black outline**, and tint multiplies: the fill takes
+ * the tint and the outline stays black at any colour, so one bake serves every
+ * palette. The style is `HudScene`'s label style one weight up.
+ */
+export function numberTexture(scene: Phaser.Scene, value: number): string {
+  const key = `number:${value}`;
+  if (scene.textures.exists(key)) return key;
+
+  // Not added to the display list: it exists only to rasterise its canvas.
+  const text = scene.make.text(
+    {
+      text: String(value),
+      style: {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "22px",
+        fontStyle: "bold",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 4,
+      },
+    },
+    false,
+  );
+
+  const width = Math.max(1, Math.ceil(text.width));
+  const height = Math.max(1, Math.ceil(text.height));
+  const canvas = scene.textures.createCanvas(key, width, height);
+  canvas?.draw(0, 0, text.canvas);
+  canvas?.refresh();
+  // Returns its canvas to Phaser's pool. Safe because `draw` copied the pixels
+  // into ours — holding on to a `Text`'s own canvas would hand the pool a
+  // surface it may hand back out to the next label.
+  text.destroy();
+
+  return key;
+}

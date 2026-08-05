@@ -34,6 +34,15 @@ import type { RunOutcome } from "../systems/run";
  * `timeChanged` carries whole seconds, not `timeLeft`, because that is what the
  * readout shows — so it fires 300 times a run rather than every frame.
  *
+ * `damageChanged` (issue #25) is the one event that does **not** get that
+ * treatment: it carries the running total and fires on every hit, thousands of
+ * times a run. `Run` is a plain accumulator with no notion of a refresh rate,
+ * so the coalescing lives at the other end — `HudScene` holds the latest value
+ * and rewrites its label on a cadence of its own. The alternative, throttling
+ * at the source, would bake a redraw budget into the run state. Note this is
+ * still the *total* rather than the per-hit amount: individual hits never reach
+ * the bus at all, because a pooled enemy reports those straight to its owner.
+ *
  * `inputEnabled` is the one event Godot replaces with a direct call: `main.gd`
  * holds the joystick and calls `_joystick.reset()` at each of its three modal
  * openings. Here the joystick is in `HudScene` and the modals are DOM, so that
@@ -49,6 +58,7 @@ export interface GameEventMap {
   leveledUp: [choices: readonly Upgrade[]];
   timeChanged: [secondsLeft: number];
   killsChanged: [kills: number];
+  damageChanged: [totalDamage: number];
   runEnded: [outcome: RunOutcome];
   inputEnabled: [enabled: boolean];
 }

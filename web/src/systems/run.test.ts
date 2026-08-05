@@ -70,6 +70,39 @@ describe("Run", () => {
     expect(bus.eventsNamed("killsChanged")).toEqual([[1], [2]]);
   });
 
+  it("totals damage until the run ends, announcing the running total", () => {
+    const bus = new FakeBus();
+    const run = new Run(bus);
+
+    run.recordDamage(140);
+    run.recordDamage(100);
+    run.end("won");
+    run.recordDamage(500);
+
+    expect(run.damageDealt).toBe(240);
+    // The *total* each time, not the hit — the HUD draws it without adding up.
+    expect(bus.eventsNamed("damageChanged")).toEqual([[140], [240]]);
+  });
+
+  it("counts overkill in full", () => {
+    const bus = new FakeBus();
+    const run = new Run(bus);
+
+    // A maxed sword landing on a grunt with 180 HP left: `Enemy.takeDamage`
+    // reports what the weapon dealt, and nothing here clamps it down to the HP
+    // actually removed. The number the player saw and the number banked here
+    // are the same number.
+    run.recordDamage(500);
+    expect(run.damageDealt).toBe(500);
+  });
+
+  it("hands both totals to the end screens together", () => {
+    const run = new Run(new FakeBus());
+    run.recordKill();
+    run.recordDamage(140);
+    expect(run.stats).toEqual({ kills: 1, damage: 140 });
+  });
+
   it("announces the clock once per displayed second, not once per frame", () => {
     const bus = new FakeBus();
     const run = new Run(bus);

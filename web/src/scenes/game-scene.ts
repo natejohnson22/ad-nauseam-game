@@ -6,6 +6,7 @@ import { Controls } from "../core/controls";
 import { EventBus, type GameBus } from "../core/event-bus";
 import { Pool } from "../core/pool";
 import { Boomerang } from "../entities/boomerang";
+import { DamageNumber } from "../entities/damage-number";
 import { Engagement } from "../entities/engagement";
 import { Enemy } from "../entities/enemy";
 import { Player } from "../entities/player";
@@ -24,7 +25,8 @@ import { HudScene } from "./hud-scene";
  * The composition root — issue #7. Thin by design: it creates the systems, owns
  * the pools and the camera, and its `update` does nothing but tick the systems
  * in a fixed order. It also stands in for `main.gd`'s wiring, which is why the
- * two small sinks (`onEnemyDied`, `onEngagementCollected`) live here.
+ * three small sinks (`onEnemyDamaged`, `onEnemyDied`, `onEngagementCollected`)
+ * live here.
  *
  * Slice 3 closes the run: the parallel `HudScene` draws the readouts, and both
  * endings land on a DOM screen whose button restarts this scene in place —
@@ -41,6 +43,7 @@ export class GameScene extends Phaser.Scene {
   private swings!: Pool<SwordSwing>;
   private boomerangs!: Pool<Boomerang>;
   private drops!: Pool<Engagement>;
+  private damageNumbers!: Pool<DamageNumber>;
   private director!: SpawnDirector;
   private weapons!: WeaponManager;
   private progression!: Progression;
@@ -65,6 +68,7 @@ export class GameScene extends Phaser.Scene {
     this.swings = new Pool(this, SwordSwing);
     this.boomerangs = new Pool(this, Boomerang);
     this.drops = new Pool(this, Engagement);
+    this.damageNumbers = new Pool(this, DamageNumber);
 
     this.player = new Player(this, 0, 0, this.controls, this.bus);
     this.cameras.main.startFollow(this.player, false);
@@ -126,6 +130,25 @@ export class GameScene extends Phaser.Scene {
     this.swings.each((swing) => swing.tick(dt));
     this.boomerangs.each((boomerang) => boomerang.tick(dt));
     this.drops.each((drop) => drop.tick(dt));
+    this.damageNumbers.each((number) => number.tick(dt));
+  }
+
+  /**
+   * Every weapon hit lands here (issue #25): bank it on the run, and pop the
+   * number above the enemy that took it.
+   *
+   * Guarded on `isOver` for the same reason `onEngagementCollected` is — a
+   * boomerang still in flight when the clock expires must not move the final
+   * tally the win screen is about to show. `Run.recordDamage` guards itself
+   * too; the floater is what needs the guard here, since a number rising over
+   * the frozen world behind the win screen would be a ghost.
+   */
+  onEnemyDamaged(enemy: Enemy, amount: number): void {
+    if (this.run.isOver) return;
+    this.run.recordDamage(amount);
+    this.damageNumbers
+      .obtain()
+      .spawn(amount, enemy.x, enemy.y, enemy.archetype.radius);
   }
 
   /** `main.gd`'s `_on_enemy_died`: count the kill, drop the engagement. */
@@ -186,8 +209,8 @@ export class GameScene extends Phaser.Scene {
     this.bus.emit("inputEnabled", false);
 
     const restart = (): void => this.restart();
-    if (outcome === "won") this.winScreen.show(this.run.kills, restart);
-    else this.adBreak.show(restart);
+    if (outcome === "won") this.winScreen.show(this.run.stats, restart);
+    else this.adBreak.show(this.run.stats, restart);
   }
 
   /**

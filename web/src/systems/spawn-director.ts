@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { ENEMIES } from "../content/enemies";
 import type { EnemyData } from "../content/types";
-import type { Enemy, EnemyDeaths } from "../entities/enemy";
+import type { Enemy, EnemyEvents } from "../entities/enemy";
 import type { Player } from "../entities/player";
 import type { Pool } from "../core/pool";
 
@@ -13,7 +13,7 @@ import type { Pool } from "../core/pool";
  * `enemy_spawned` is gone: the director owns the pool it spawns into, so there
  * is no longer anyone to notify (issue #7). All `main.gd` ever did with that
  * signal was reach through it to hook `died`, and that half survives as the
- * `EnemyDeaths` sink stamped onto each spawn.
+ * `EnemyEvents` sink stamped onto each spawn.
  */
 export class SpawnDirector {
   private static readonly SPAWN_RADIUS = 640;
@@ -34,7 +34,7 @@ export class SpawnDirector {
      * the only thing that spawns enemies, so it is where the sink is stamped
      * onto each one. This is what is left of `enemy_spawned`.
      */
-    private readonly deaths: EnemyDeaths,
+    private readonly events: EnemyEvents,
   ) {}
 
   start(): void {
@@ -111,7 +111,7 @@ export class SpawnDirector {
         this.player.x + Math.cos(angle) * SpawnDirector.SPAWN_RADIUS,
         this.player.y + Math.sin(angle) * SpawnDirector.SPAWN_RADIUS,
         this.player,
-        this.deaths,
+        this.events,
       );
   }
 }

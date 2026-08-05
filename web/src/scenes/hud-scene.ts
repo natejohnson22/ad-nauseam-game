@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import type { Controls } from "../core/controls";
 import type { GameBus } from "../core/event-bus";
+import { formatNumber } from "../core/format";
 import { rectTexture } from "../core/textures";
 import { Player } from "../entities/player";
 import { Progression } from "../systems/progression";
@@ -46,6 +47,24 @@ export class HudScene extends Phaser.Scene {
     color: 0x66ff99,
   } as const;
 
+  /**
+   * The right-hand stat column (issue #25). Both labels are right-*origin* and
+   * anchored to this x, so they grow leftward: the damage total reaches seven
+   * digits in a full run and a left-origin label would walk off the screen.
+   */
+  private static readonly STATS = { right: 1280 - 20, top: 18, gap: 22 } as const;
+
+  /**
+   * How often the damage label may be rewritten, in seconds.
+   *
+   * `damageChanged` fires on every hit — thousands per run, in bursts, and
+   * heaviest exactly when the swarm is thickest. Unlike the bars, which are
+   * sprite rescales, rewriting a `Text` re-renders its canvas and re-uploads
+   * it. 10Hz caps that at ten a second however hard the hits land, and is
+   * still faster than a seven-digit number can be read.
+   */
+  private static readonly DAMAGE_REDRAW = 0.1;
+
   private bus!: GameBus;
   private controls!: Controls;
   private joystick!: VirtualJoystick;
@@ -54,6 +73,12 @@ export class HudScene extends Phaser.Scene {
   private levelLabel!: Phaser.GameObjects.Text;
   private timerLabel!: Phaser.GameObjects.Text;
   private killsLabel!: Phaser.GameObjects.Text;
+  private damageLabel!: Phaser.GameObjects.Text;
+  /** Latest total heard on the bus; drawn on the next redraw tick, not now. */
+  private damage = 0;
+  /** What `damageLabel` currently reads, so an idle stretch redraws nothing. */
+  private drawnDamage = 0;
+  private damageRedrawIn = 0;
 
   constructor() {
     super({ key: HudScene.KEY, active: false });
@@ -70,7 +95,8 @@ export class HudScene extends Phaser.Scene {
 
     this.levelLabel = this.label("LVL 1", 20, 62);
     this.timerLabel = this.label(formatClock(Run.LENGTH), 640 - 40, 14, 32);
-    this.killsLabel = this.label("Kills: 0", 1280 - 140, 18);
+    this.killsLabel = this.statLabel("Kills: 0", 0);
+    this.damageLabel = this.statLabel("Damage: 0", 1);
 
     /* The starting values are written here rather than waited for. `Player` and
        `Progression` emit their opening state from their constructors, which run
@@ -91,13 +117,51 @@ export class HudScene extends Phaser.Scene {
       this.timerLabel.setText(formatClock(secondsLeft));
     });
     this.bus.on("killsChanged", (kills) => {
-      this.killsLabel.setText(`Kills: ${kills}`);
+      this.killsLabel.setText(`Kills: ${formatNumber(kills)}`);
+    });
+    /* Stored, not drawn — see `DAMAGE_REDRAW` and `update` below. This is the
+       one readout whose event outruns the display. */
+    this.bus.on("damageChanged", (total) => {
+      this.damage = total;
     });
 
     /* Last, so it draws over the readouts — `main.gd` adds it to `_ui` last for
        the same reason. */
     this.joystick = new VirtualJoystick(this, this.controls);
     this.bus.on("inputEnabled", (enabled) => this.joystick.setEnabled(enabled));
+  }
+
+  /**
+   * The one thing this scene polls rather than draws on arrival.
+   *
+   * Everything else here is written straight from its bus handler, because
+   * those events are rare — one a second, one a kill, one a level. Damage is
+   * not: it arrives per hit. So the handler stores and this drains, at
+   * `DAMAGE_REDRAW`. Guarded on the value having actually moved, so a lull —
+   * or the whole of a paused level-up modal, since this scene keeps ticking
+   * through it — costs nothing.
+   */
+  override update(_time: number, delta: number): void {
+    this.damageRedrawIn -= delta / 1000;
+    if (this.damageRedrawIn > 0) return;
+    this.damageRedrawIn = HudScene.DAMAGE_REDRAW;
+    if (this.damage === this.drawnDamage) return;
+    this.drawnDamage = this.damage;
+    this.damageLabel.setText(`Damage: ${formatNumber(this.damage)}`);
+  }
+
+  /**
+   * One line of the right-hand stat column, `row` places down from its top.
+   *
+   * Right-origin, so the text grows leftward from `STATS.right` — the whole
+   * point of the column, and why these do not go through `label` directly.
+   */
+  private statLabel(text: string, row: number): Phaser.GameObjects.Text {
+    return this.label(
+      text,
+      HudScene.STATS.right,
+      HudScene.STATS.top + row * HudScene.STATS.gap,
+    ).setOrigin(1, 0);
   }
 
   /**

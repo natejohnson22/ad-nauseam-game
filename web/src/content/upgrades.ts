@@ -1,7 +1,7 @@
 import type { UpgradeData } from "./types";
 
 /**
- * Ported verbatim from `data/upgrades/*.tres`, in `main.gd`'s `_upgrade_pool`
+ * Ported from `data/upgrades/*.tres`, in `main.gd`'s `_upgrade_pool`
  * order — which is the pool's order, since `UPGRADE_POOL` is derived from this
  * record rather than hand-listed.
  *
@@ -9,12 +9,16 @@ import type { UpgradeData } from "./types";
  * `UpgradeEffect` arms up front promised they would: two literals and no
  * dispatch branch. `weapon_projectile_add` had been declared and dispatched
  * since slice 2 with nothing to route to.
+ *
+ * **The two damage amounts are the `.tres` numbers x10** (issue #25) — see the
+ * note in `weapons.ts`. `player_speed_mult` and `player_cooldown_mult` multiply
+ * numbers outside the HP/damage family, so they are untouched.
  */
 export const UPGRADES = {
   sword_damage: {
     title: "Premium Blade",
-    description: "+6 AdBlock+ Sword damage",
-    effect: { kind: "weapon_damage_add", weapon: "adblock_sword", amount: 6 },
+    description: "+60 AdBlock+ Sword damage",
+    effect: { kind: "weapon_damage_add", weapon: "adblock_sword", amount: 60 },
     maxStacks: 6,
   },
   sword_arc: {
@@ -25,8 +29,8 @@ export const UPGRADES = {
   },
   boomerang_damage: {
     title: "Sharper Signal",
-    description: "+5 Do Not Track Boomerang damage",
-    effect: { kind: "weapon_damage_add", weapon: "dnt_boomerang", amount: 5 },
+    description: "+50 Do Not Track Boomerang damage",
+    effect: { kind: "weapon_damage_add", weapon: "dnt_boomerang", amount: 50 },
     maxStacks: 6,
   },
   boomerang_projectile: {
