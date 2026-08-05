@@ -90,7 +90,17 @@ export class GameScene extends Phaser.Scene {
       this.bus,
     );
 
-    this.director = new SpawnDirector(this.enemies, this.player, this);
+    // The sink is the whole of what the director knows about the world
+    // (issue #29): it decides which archetype lands where, and this closure —
+    // the only place that holds the pool, the player, and the damage sink at
+    // once — turns that into an actual enemy.
+    this.director = new SpawnDirector(
+      {
+        spawn: (data, x, y) =>
+          this.enemies.obtain().spawn(data, x, y, this.player, this),
+      },
+      this.player,
+    );
 
     this.overlay = new Overlay(this.game);
     this.levelUpModal = new LevelUpModal(this.overlay);
@@ -124,7 +134,8 @@ export class GameScene extends Phaser.Scene {
 
     this.run.tick(dt);
     this.player.tick(dt);
-    this.director.tick(dt);
+    // After `run.tick`, so the director reads this frame's elapsed time.
+    this.director.tick(dt, this.run.elapsed);
     this.enemies.each((enemy) => enemy.tick(dt));
     this.weapons.tick(dt);
     this.swings.each((swing) => swing.tick(dt));

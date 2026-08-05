@@ -12,6 +12,7 @@
  * unions are now complete for Prototype 1.
  */
 
+import type { EnemyId } from "./enemies";
 import type { WeaponId } from "./weapons";
 
 /** Strips `readonly` for the per-run copies upgrades mutate (WeaponManager). */
@@ -119,4 +120,54 @@ export interface UpgradeData {
   readonly effect: UpgradeEffect;
   /** How many times this may be taken in one run — keeps the pool fresh. */
   readonly maxStacks: number;
+}
+
+// ------------------------------------------------------------------- phases
+
+/**
+ * A value that moves across a phase's window, lerped on phase-local progress
+ * (issue #29). Two numbers rather than a `{ from, to }` because the table is
+ * read as a grid — seven rows of these, scanned down a column while tuning —
+ * and the field names repeated 40 times are noise at that density.
+ */
+export type Ramp = readonly [from: number, to: number];
+
+/** The PDF's `3–4`: a level-up budget with the brief's slack kept. */
+export type Budget = readonly [min: number, max: number];
+
+/**
+ * One enemy's arrival rate inside one phase.
+ *
+ * Tracks are **restated in full by every phase** — nothing is inherited from
+ * the phase above, even though the PDF writes its rosters cumulatively
+ * ("+ Basic ranged"). The point is that a phase's real pressure is legible in
+ * its own row: seven tuning passes are coming, and each must be able to move
+ * its phase without reading the six before it.
+ */
+export interface SpawnTrack {
+  readonly enemy: EnemyId;
+  /** Seconds between waves. */
+  readonly interval: Ramp;
+  /** Enemies per wave; lerped, then rounded at spawn time. */
+  readonly wave: Ramp;
+}
+
+/**
+ * One row of the pacing table — the spine every time-driven system reads
+ * (issue #29).
+ *
+ * `levelUps` is declared but nothing reads it yet: the budget ticket is blocked
+ * on this table precisely because a per-phase budget needs a phase to hang off,
+ * and this field is that attachment point. It decides the mechanism.
+ */
+export interface Phase {
+  readonly id: string;
+  /** For readouts and the playtest harness's phase picker. */
+  readonly displayName: string;
+  /** Seconds elapsed when this phase opens. */
+  readonly start: number;
+  /** Seconds elapsed when it closes — the next phase's `start`. */
+  readonly end: number;
+  readonly levelUps: Budget;
+  readonly tracks: readonly SpawnTrack[];
 }

@@ -1,40 +1,59 @@
-import Phaser from "phaser";
-import { ENEMIES } from "../content/enemies";
-import type { EnemyData } from "../content/types";
-import type { Enemy, EnemyEvents } from "../entities/enemy";
-import type { Player } from "../entities/player";
-import type { Pool } from "../core/pool";
+import { ENEMIES, type EnemyId } from "../content/enemies";
+import { phaseAt, progressIn } from "../content/phases";
+import type { EnemyData, Ramp, SpawnTrack } from "../content/types";
 
 /**
- * Time-driven escalation — the port of `spawn_director.gd`. Enemies arrive on a
- * ring around the player, so the ramp is aspect-ratio-agnostic and the camera
- * just frames a slice of it.
+ * Where a spawned enemy goes. The scene owns the pool, the player, and the
+ * damage sink, and satisfies this with one closure at the composition root —
+ * so the director never sees a `Pool<Enemy>` and this file imports no Phaser
+ * (issue #29). Same trade `Progression` already makes with `SpeedTarget` and
+ * `UpgradeTarget`: a narrow interface is both the test seam and the honest
+ * statement of what the system may touch.
+ */
+export interface SpawnSink {
+  spawn(data: EnemyData, x: number, y: number): void;
+}
+
+/** What the spawn ring is drawn around. `Player` satisfies it. */
+export interface SpawnOrigin {
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * Time-driven escalation — the port of `spawn_director.gd`, rebuilt in issue
+ * #29 to read the phase table instead of its own constants.
  *
- * `enemy_spawned` is gone: the director owns the pool it spawns into, so there
- * is no longer anyone to notify (issue #7). All `main.gd` ever did with that
- * signal was reach through it to hook `died`, and that half survives as the
- * `EnemyEvents` sink stamped onto each spawn.
+ * What it used to be: two cooldowns lerped against a `RUN_LENGTH = 300`, with
+ * the ogre gated by a lone `OGRE_START_TIME` and wave size on a
+ * `3 + floor(time / 45)` that had no ceiling. What it is now: a loop over the
+ * current phase's tracks. Every number it uses lives in `phases.ts`, which is
+ * the point — the seven tuning passes ahead of us edit a table, not this file.
+ *
+ * It also no longer keeps a clock. `tick` is handed the run's elapsed seconds,
+ * so there is exactly one timeline in the game and starting a run part-way
+ * through is `Run`'s problem alone.
  */
 export class SpawnDirector {
-  private static readonly SPAWN_RADIUS = 640;
-  private static readonly RUN_LENGTH = 300;
-  /** No ogre before 1:30 — the first half of the run is grunts only. */
-  private static readonly OGRE_START_TIME = 90;
+  static readonly SPAWN_RADIUS = 640;
 
-  private time = 0;
-  private gruntCd = 0;
-  private ogreCd = 0;
   private running = false;
+  /**
+   * Seconds until each track's next wave, keyed by enemy rather than by track,
+   * because a track is a per-phase object and this has to survive the turnover.
+   * A key **absent** here is a track that has not fired yet and therefore fires
+   * on sight — which is what makes an arriving archetype announce itself at the
+   * top of its phase. Same rule the earlier tuning pass applied to the ogre,
+   * seeding `_ogre_cd` to zero so the first one lands at 1:30 rather than
+   * Godot's accidental 3:00.
+   */
+  private readonly cooldowns = new Map<EnemyId, number>();
 
   constructor(
-    private readonly enemies: Pool<Enemy>,
-    private readonly player: Player,
-    /**
-     * Carried, not consumed: the director never hears about a death, but it is
-     * the only thing that spawns enemies, so it is where the sink is stamped
-     * onto each one. This is what is left of `enemy_spawned`.
-     */
-    private readonly events: EnemyEvents,
+    private readonly sink: SpawnSink,
+    private readonly origin: SpawnOrigin,
+    /** Injected so placement is deterministic under test — as `Progression`. */
+    private readonly random: () => number = Math.random,
   ) {}
 
   start(): void {
@@ -45,73 +64,49 @@ export class SpawnDirector {
     this.running = false;
   }
 
-  tick(delta: number): void {
+  /** `elapsed` is seconds into the run — see `Run.elapsed`. */
+  tick(delta: number, elapsed: number): void {
     if (!this.running) return;
-    this.time += delta;
 
-    this.gruntCd -= delta;
-    if (this.gruntCd <= 0) {
-      this.spawnGruntWave();
-      this.gruntCd = this.gruntInterval();
-    }
+    const phase = phaseAt(elapsed);
+    const t = progressIn(phase, elapsed);
 
-    // Deliberately *not* Godot's behaviour. `spawn_director.gd:28` seeds
-    // `_ogre_cd` to `OGRE_START_TIME` *and* only drains it after that time has
-    // passed, so Godot's first ogre lands at 3:00 rather than the 1:30 its own
-    // comment at `spawn_director.gd:5` advertises. The tuning pass judged the
-    // 1:30–3:00 stretch as dead air and took the documented pacing: seeding to
-    // zero makes the first ogre land at exactly 1:30.
-    if (this.time >= SpawnDirector.OGRE_START_TIME) {
-      this.ogreCd -= delta;
-      if (this.ogreCd <= 0) {
-        this.spawn(ENEMIES.autoplay_ogre);
-        this.ogreCd = this.ogreInterval();
+    // A track that has left the roster forgets its cooldown, so an enemy that
+    // returns in a later phase announces itself again rather than resuming
+    // mid-count from whenever it was last seen.
+    for (const enemy of this.cooldowns.keys())
+      if (!phase.tracks.some((track) => track.enemy === enemy))
+        this.cooldowns.delete(enemy);
+
+    for (const track of phase.tracks) {
+      const remaining = (this.cooldowns.get(track.enemy) ?? 0) - delta;
+      if (remaining > 0) {
+        this.cooldowns.set(track.enemy, remaining);
+        continue;
       }
+      this.spawnWave(track, t);
+      this.cooldowns.set(track.enemy, lerp(track.interval, t));
     }
   }
 
-  /** 2.2s between waves at the start, tightening to 0.7s by the 5-minute mark. */
-  private gruntInterval(): number {
-    return Phaser.Math.Linear(
-      2.2,
-      0.7,
-      Phaser.Math.Clamp(this.time / SpawnDirector.RUN_LENGTH, 0, 1),
-    );
+  private spawnWave(track: SpawnTrack, t: number): void {
+    const data = ENEMIES[track.enemy];
+    const count = Math.round(lerp(track.wave, t));
+    for (let i = 0; i < count; i++) this.spawn(data);
   }
 
-  /** 3 grunts per wave early, ~9 late. */
-  private gruntWaveSize(): number {
-    return 3 + Math.floor(this.time / 45);
-  }
-
-  /** 11s between ogres at 1:30, tightening to 5s by the 5-minute mark. */
-  private ogreInterval(): number {
-    const m = Phaser.Math.Clamp(
-      (this.time - SpawnDirector.OGRE_START_TIME) /
-        (SpawnDirector.RUN_LENGTH - SpawnDirector.OGRE_START_TIME),
-      0,
-      1,
-    );
-    return Phaser.Math.Linear(11, 5, m);
-  }
-
-  private spawnGruntWave(): void {
-    for (let i = 0; i < this.gruntWaveSize(); i++) {
-      this.spawn(ENEMIES.popup_grunt);
-    }
-  }
-
-  /** Somewhere on the ring around the player, at a uniform random angle. */
+  /** Somewhere on the ring around the origin, at a uniform random angle. */
   private spawn(data: EnemyData): void {
-    const angle = Math.random() * Math.PI * 2;
-    this.enemies
-      .obtain()
-      .spawn(
-        data,
-        this.player.x + Math.cos(angle) * SpawnDirector.SPAWN_RADIUS,
-        this.player.y + Math.sin(angle) * SpawnDirector.SPAWN_RADIUS,
-        this.player,
-        this.events,
-      );
+    const angle = this.random() * Math.PI * 2;
+    this.sink.spawn(
+      data,
+      this.origin.x + Math.cos(angle) * SpawnDirector.SPAWN_RADIUS,
+      this.origin.y + Math.sin(angle) * SpawnDirector.SPAWN_RADIUS,
+    );
   }
+}
+
+/** `Phaser.Math.Linear`, inlined to keep this file Phaser-free. */
+function lerp([from, to]: Ramp, t: number): number {
+  return from + (to - from) * t;
 }
