@@ -35,14 +35,29 @@ move speed, and cooldown reduction.
 
 ## Running it
 
-Requires **Node 24** and **pnpm 11**. Everything lives in `web/`.
+Requires **Node 24** and **pnpm 11**. The web project is the repo root.
 
 ```bash
-pnpm --dir web install
-pnpm --dir web dev
+pnpm install
+pnpm dev
 ```
 
 Other scripts: `build`, `preview`, `typecheck` (`tsc --noEmit`), `test` (`vitest run`).
+
+### Native (Capacitor)
+
+The same web build is wrapped for iOS and Android with Capacitor 8. The native
+projects live in `ios/` and `android/` and are committed.
+
+```bash
+pnpm ios      # build:native + cap sync + open Xcode
+pnpm android  # build:native + cap sync + open Android Studio
+```
+
+`pnpm sync` alone rebuilds and copies assets without opening an IDE. Note the
+native build is `build:native`, not `build` — the Pages build hardcodes a
+`/ad-nauseum-game/` base path that a webview would 404 on, so `build:native`
+overrides it to `./`. Both platforms are pinned to landscape.
 
 **Controls**
 - **Keyboard:** WASD or arrow keys to move.
@@ -52,26 +67,27 @@ Other scripts: `build`, `preview`, `typecheck` (`tsc --noEmit`), `test` (`vitest
 ## Project layout
 
 ```
-web/
-  index.html
-  src/
-    main.ts              Game config and boot
-    scenes/
-      game-scene.ts        Composition root — owns the pools and systems
-      hud-scene.ts         Always-running parallel scene for the HUD
-    entities/            player, enemy, engagement, sword-swing, boomerang
-    systems/
-      progression.ts       Engagement -> level -> upgrade choices (tested)
-      run.ts               Run timer, kills, win/lose state (tested)
-      spawn-director.ts    Wave / spawn pacing
-      weapon-manager.ts    Owns and fires equipped weapons
-    core/
-      controls.ts          Unified keyboard + joystick input
-      event-bus.ts         Typed facade over Phaser's EventEmitter
-      pool.ts              Sprite pooling
-      textures.ts          Primitives baked to textures at boot
-    ui/                  Virtual joystick (canvas) + DOM overlay modals
-    content/             Weapon, enemy, and upgrade definitions as typed literals
+index.html
+capacitor.config.ts    Capacitor app id, name, webDir
+ios/ android/          Capacitor native projects (generated, committed)
+src/
+  main.ts              Game config and boot
+  scenes/
+    game-scene.ts        Composition root — owns the pools and systems
+    hud-scene.ts         Always-running parallel scene for the HUD
+  entities/            player, enemy, engagement, sword-swing, boomerang
+  systems/
+    progression.ts       Engagement -> level -> upgrade choices (tested)
+    run.ts               Run timer, kills, win/lose state (tested)
+    spawn-director.ts    Wave / spawn pacing
+    weapon-manager.ts    Owns and fires equipped weapons
+  core/
+    controls.ts          Unified keyboard + joystick input
+    event-bus.ts         Typed facade over Phaser's EventEmitter
+    pool.ts              Sprite pooling
+    textures.ts          Primitives baked to textures at boot
+  ui/                  Virtual joystick (canvas) + DOM overlay modals
+  content/             Weapon, enemy, and upgrade definitions as typed literals
 ```
 
 Gameplay content is data-driven: weapons, enemies, and upgrades are hand-written
@@ -93,6 +109,9 @@ than code.
   rendering or scene tests.
 - **Deploy:** GitHub Pages via Actions on push to `main`, gated by typecheck, tests,
   and build.
+- **Native:** Capacitor 8 (`ios/`, `android/`) wrapping the same Vite build. No
+  Capacitor plugins yet — `@capacitor/core` is not imported by game code, so the
+  web and native builds are byte-identical apart from the base path.
 
 ## History
 

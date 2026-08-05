@@ -19,10 +19,6 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-defaults:
-  run:
-    working-directory: web
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -42,7 +38,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
 
@@ -59,7 +55,7 @@ jobs:
       - if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
-          path: web/dist
+          path: dist
 
   deploy:
     needs: build

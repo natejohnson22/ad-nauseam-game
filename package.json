@@ -1,5 +1,5 @@
 {
-  "name": "ad-nauseum-web",
+  "name": "ad-nauseum-game",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -7,14 +7,22 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:native": "vite build --base=./",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sync": "pnpm build:native && cap sync",
+    "ios": "pnpm sync && cap open ios",
+    "android": "pnpm sync && cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/ios": "^8.5.0",
     "phaser": "4.2.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.12",
     "vitest": "^3.2.4"
