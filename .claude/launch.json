@@ -4,7 +4,7 @@
     {
       "name": "ad-nauseam-web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "web", "dev"],
+      "runtimeArgs": ["dev"],
       "port": 5173,
       "autoPort": true
     }

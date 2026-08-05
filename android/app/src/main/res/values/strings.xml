@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ad Nauseum</string>
+    <string name="title_activity_main">Ad Nauseum</string>
+    <string name="package_name">com.natejohnson.adnauseum</string>
+    <string name="custom_url_scheme">com.natejohnson.adnauseum</string>
+</resources>
