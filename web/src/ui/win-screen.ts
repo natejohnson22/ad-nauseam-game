@@ -1,3 +1,5 @@
+import { formatNumber } from "../core/format";
+import type { RunStats } from "../systems/run";
 import type { Overlay } from "./overlay";
 
 /**
@@ -13,7 +15,7 @@ export class WinScreen {
 
   constructor(private readonly overlay: Overlay) {}
 
-  show(kills: number, onPlayAgain: () => void): void {
+  show(stats: RunStats, onPlayAgain: () => void): void {
     this.hide();
 
     const modal = document.createElement("div");
@@ -22,8 +24,10 @@ export class WinScreen {
     const title = document.createElement("h1");
     title.textContent = "YOU SURVIVED";
 
-    const stats = document.createElement("p");
-    stats.textContent = `You outlasted the Swarm. Kills: ${kills}`;
+    const summary = document.createElement("p");
+    summary.textContent =
+      `You outlasted the Swarm. Kills: ${formatNumber(stats.kills)} · ` +
+      `Damage: ${formatNumber(stats.damage)}`;
 
     const again = document.createElement("button");
     again.className = "action";
@@ -31,7 +35,7 @@ export class WinScreen {
     again.textContent = "Play Again";
     again.addEventListener("click", onPlayAgain);
 
-    modal.append(title, stats, again);
+    modal.append(title, summary, again);
     this.overlay.host.appendChild(modal);
     this.element = modal;
     again.focus();

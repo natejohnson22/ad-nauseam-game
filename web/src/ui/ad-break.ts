@@ -1,3 +1,5 @@
+import { formatNumber } from "../core/format";
+import type { RunStats } from "../systems/run";
 import type { Overlay } from "./overlay";
 
 /**
@@ -31,7 +33,7 @@ export class AdBreak {
 
   constructor(private readonly overlay: Overlay) {}
 
-  show(onSkip: () => void): void {
+  show(stats: RunStats, onSkip: () => void): void {
     this.hide();
 
     const modal = document.createElement("div");
@@ -46,6 +48,15 @@ export class AdBreak {
         Math.floor(Math.random() * AdBreak.DEATH_FLAVOR.length)
       ] ?? "";
 
+    /* Death is the ending most runs get, so it is where the tally is most
+       worth showing (issue #25). Below the flavour line and above the ad, so
+       the gag still lands first. */
+    const summary = document.createElement("p");
+    summary.className = "run-stats";
+    summary.textContent =
+      `Kills: ${formatNumber(stats.kills)} · ` +
+      `Damage: ${formatNumber(stats.damage)}`;
+
     const ad = document.createElement("div");
     ad.className = "ad-frame";
     ad.textContent = "[ YOUR AD HERE ]\n(placeholder)";
@@ -57,7 +68,7 @@ export class AdBreak {
     skip.textContent = `Skip in ${AdBreak.LOCK_SECONDS}...`;
     skip.addEventListener("click", onSkip);
 
-    modal.append(title, flavor, ad, skip);
+    modal.append(title, flavor, summary, ad, skip);
     this.overlay.host.appendChild(modal);
     this.element = modal;
 

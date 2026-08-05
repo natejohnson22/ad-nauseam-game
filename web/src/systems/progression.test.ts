@@ -300,9 +300,11 @@ describe("upgrade-effect dispatch", () => {
     for (const upgrade of UPGRADE_POOL) progression.applyUpgrade(upgrade);
 
     expect(weapons.calls).toEqual([
-      ["modDamage", "adblock_sword", 6],
+      // The two damage amounts are x10 with the rest of the HP/damage family
+      // (issue #25); the arc is not, being outside it.
+      ["modDamage", "adblock_sword", 60],
       ["modArc", "adblock_sword", 25],
-      ["modDamage", "dnt_boomerang", 5],
+      ["modDamage", "dnt_boomerang", 50],
       ["modProjectiles", "dnt_boomerang", 1],
     ]);
     expect(hero.speedMult).toBeCloseTo(1.12, 10);

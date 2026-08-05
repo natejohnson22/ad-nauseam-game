@@ -12,7 +12,10 @@ import { circleTexture } from "../core/textures";
  * Unpooled — there is exactly one, and it lives as long as the run.
  */
 export class Player extends Phaser.GameObjects.Sprite {
-  static readonly MAX_HP = 100;
+  /** `player.gd`'s 100, x10 with the rest of the HP/damage family — see the
+      note in `content/weapons.ts` (issue #25). Enemy contact damage scaled with
+      it, so the number of touches that kill you is unchanged. */
+  static readonly MAX_HP = 1000;
   static readonly BASE_SPEED = 220;
   static readonly RADIUS = 16;
   private static readonly PIP_RADIUS = 4;

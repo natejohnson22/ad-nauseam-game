@@ -65,6 +65,14 @@
   font-size: 16px;
 }
 
+/* The run tally on the ad break (issue #25). Dimmed and letter-spaced so it
+   reads as a scoreboard rather than as more of the flavour line above it. */
+#ui-overlay .modal p.run-stats {
+  color: rgba(255, 255, 255, 0.72);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
 /* The "ad": `main.gd`'s 360x200 ColorRect at Color(0.15, 0.15, 0.18). Nothing
    goes in it — the real ad SDK is deferred and out of scope for the port. */
 #ui-overlay .ad-frame {
