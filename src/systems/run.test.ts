@@ -21,7 +21,7 @@ class FakeBus {
 }
 
 describe("Run", () => {
-  it("starts at the full 5 minutes, unfinished", () => {
+  it("starts at the phase table's full length, unfinished", () => {
     const run = new Run(new FakeBus());
     expect(run.timeLeft).toBe(Run.LENGTH);
     expect(run.isOver).toBe(false);
@@ -107,14 +107,14 @@ describe("Run", () => {
     const bus = new FakeBus();
     const run = new Run(bus);
 
-    // Six 100ms frames: 300 -> 299.4, so the readout goes 5:00 -> 4:59 once.
+    // Six 100ms frames: 1800 -> 1799.4, so the readout ticks over exactly once.
     for (let i = 0; i < 6; i++) run.tick(0.1);
-    expect(run.secondsLeft).toBe(300);
+    expect(run.secondsLeft).toBe(Run.LENGTH);
     expect(bus.eventsNamed("timeChanged")).toEqual([]);
 
     for (let i = 0; i < 6; i++) run.tick(0.1);
-    expect(run.secondsLeft).toBe(299);
-    expect(bus.eventsNamed("timeChanged")).toEqual([[299]]);
+    expect(run.secondsLeft).toBe(Run.LENGTH - 1);
+    expect(bus.eventsNamed("timeChanged")).toEqual([[Run.LENGTH - 1]]);
   });
 
   it("reads 0:00 before it announces the win", () => {

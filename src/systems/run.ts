@@ -1,3 +1,4 @@
+import { RUN_LENGTH } from "../content/phases";
 import type { GameBus } from "../core/event-bus";
 
 /** Why the run stopped. Slice 3 is what turns each into a screen. */
@@ -24,8 +25,12 @@ export interface RunStats {
  * straight into a `Label` from the same object that owns the number.
  */
 export class Run {
-  /** 5 minutes, from `main.gd`'s `RUN_LENGTH`. */
-  static readonly LENGTH = 300;
+  /**
+   * 30 minutes — but never written here. It is the phase table's last close
+   * (issue #29), so the clock and the pacing cannot disagree about when the run
+   * ends, and stretching the run stays a one-file edit.
+   */
+  static readonly LENGTH = RUN_LENGTH;
 
   timeLeft = Run.LENGTH;
   kills = 0;
@@ -55,6 +60,15 @@ export class Run {
   /** Whole seconds remaining, as the readout shows them. */
   get secondsLeft(): number {
     return Math.ceil(this.timeLeft);
+  }
+
+  /**
+   * Seconds into the run — the only timeline in the game (issue #29).
+   * `SpawnDirector` used to accumulate its own, which meant two clocks that
+   * could drift and two places a playtest seek would have to reach.
+   */
+  get elapsed(): number {
+    return Run.LENGTH - this.timeLeft;
   }
 
   tick(delta: number): void {
