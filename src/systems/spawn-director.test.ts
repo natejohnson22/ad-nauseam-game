@@ -15,9 +15,34 @@ import { SpawnDirector, type SpawnSink } from "./spawn-director";
  */
 class FakeSink implements SpawnSink {
   readonly spawned: { name: string; x: number; y: number }[] = [];
+  /**
+   * What `liveCount` reports, keyed by display name — kept honest rather than
+   * stubbed: a spawn raises it, and `kill` is the only thing that lowers it.
+   * A fake that spawned without becoming live would let a `max: 1` track
+   * produce a mini-boss every interval and still pass.
+   */
+  private readonly live = new Map<string, number>();
 
   spawn(data: EnemyData, x: number, y: number): void {
     this.spawned.push({ name: data.displayName, x, y });
+    this.live.set(data.displayName, this.liveCountOf(data.displayName) + 1);
+  }
+
+  liveCount(data: EnemyData): number {
+    return this.liveCountOf(data.displayName);
+  }
+
+  /** Put `count` of `name` on the board without the director having spawned them. */
+  seed(name: string, count: number): void {
+    this.live.set(name, count);
+  }
+
+  kill(name: string, count = 1): void {
+    this.live.set(name, Math.max(0, this.liveCountOf(name) - count));
+  }
+
+  private liveCountOf(name: string): number {
+    return this.live.get(name) ?? 0;
   }
 
   /** How many of `name` have landed so far. */
@@ -25,13 +50,16 @@ class FakeSink implements SpawnSink {
     return this.spawned.filter((s) => s.name === name).length;
   }
 
+  /** Forget the log **and** the board — a fresh arena, not just a fresh tally. */
   clear(): void {
     this.spawned.length = 0;
+    this.live.clear();
   }
 }
 
 const GRUNT = "Popup Grunt";
 const OGRE = "Autoplay Video Ogre";
+const BANNER = "Cookie Banner";
 
 /** A director at the origin, spawning north — placement is not what is tested. */
 function director(sink: SpawnSink): SpawnDirector {
@@ -79,7 +107,7 @@ describe("SpawnDirector", () => {
     const d = director(sink);
     d.start();
 
-    // Quick Start has one track. The ogre does not arrive until Struggle.
+    // Quick Start has one track. The ogre does not arrive until Panic.
     play(d, 0, 120);
     expect(sink.count(GRUNT)).toBeGreaterThan(0);
     expect(sink.count(OGRE)).toBe(0);
@@ -121,12 +149,12 @@ describe("SpawnDirector", () => {
     const d = director(sink);
     d.start();
 
-    // Ticked through Confidence, where there is no ogre track, then one tick
-    // into Struggle, where there is.
-    play(d, 590, 10);
+    // Ticked through Struggle, where there is no ogre track, then one tick
+    // into Panic, where there is.
+    play(d, 890, 10);
     expect(sink.count(OGRE)).toBe(0);
 
-    d.tick(1 / 60, 600);
+    d.tick(1 / 60, 900);
     expect(sink.count(OGRE)).toBe(1);
   });
 
@@ -160,7 +188,7 @@ describe("SpawnDirector", () => {
     const d = director(sink);
     d.start();
 
-    // The open of Struggle: both tracks present, both at their `from` values.
+    // The open of Struggle: every track present, all at their `from` values.
     d.tick(1 / 60, 600);
     const view = d.readout(600);
     expect(view.running).toBe(true);
@@ -168,7 +196,8 @@ describe("SpawnDirector", () => {
     expect(view.progress).toBeCloseTo(0);
     expect(view.tracks.map((t) => t.enemy)).toEqual([
       "popup_grunt",
-      "autoplay_ogre",
+      "tracking_pixel",
+      "cookie_banner",
     ]);
 
     const grunt = view.tracks[0]!;
@@ -186,6 +215,76 @@ describe("SpawnDirector", () => {
     const grunt = d.readout(899.99).tracks[0]!;
     expect(grunt.interval).toBeCloseTo(1.45, 1);
     expect(grunt.wave).toBe(6);
+  });
+
+  /**
+   * The cap is what a mini-boss *is* (issue #31), so these are the tests that
+   * say so — there is no mini-boss object to assert about.
+   */
+  describe("a track's concurrency cap", () => {
+    it("holds a full track at its ceiling", () => {
+      const sink = new FakeSink();
+      const d = director(sink);
+      d.start();
+
+      // Panic's ogre track is `max: 1`. One already alive means none arrive,
+      // however long the director runs.
+      sink.seed(OGRE, 1);
+      play(d, 900, 120);
+      expect(sink.count(OGRE)).toBe(0);
+    });
+
+    it("refills the slot once the standing one dies", () => {
+      const sink = new FakeSink();
+      const d = director(sink);
+      d.start();
+
+      sink.seed(OGRE, 1);
+      play(d, 900, 60);
+      expect(sink.count(OGRE)).toBe(0);
+
+      // Killed. The next interval finds room — not the next frame, which is
+      // what stops a mini-boss from being an instant treadmill.
+      sink.kill(OGRE);
+      play(d, 960, 30);
+      expect(sink.count(OGRE)).toBe(1);
+    });
+
+    it("trims a wave to the room left rather than skipping it", () => {
+      const sink = new FakeSink();
+      const d = director(sink);
+      d.start();
+
+      // God-Tier opens the banner track at 2 per wave, capped at 6. With 5
+      // alive there is room for exactly one.
+      sink.seed(BANNER, 5);
+      d.tick(1 / 60, 1500);
+      expect(sink.count(BANNER)).toBe(1);
+    });
+
+    it("leaves an uncapped track alone however many are alive", () => {
+      const sink = new FakeSink();
+      const d = director(sink);
+      d.start();
+
+      sink.seed(GRUNT, 500);
+      d.tick(1 / 60, 0);
+      expect(sink.count(GRUNT)).toBe(3);
+    });
+
+    it("reports the cap and the live count in the readout", () => {
+      const sink = new FakeSink();
+      const d = director(sink);
+      d.start();
+
+      sink.seed(OGRE, 1);
+      const tracks = d.readout(900).tracks;
+      const ogre = tracks.find((t) => t.enemy === "autoplay_ogre")!;
+      expect(ogre.max).toBe(1);
+      expect(ogre.live).toBe(1);
+      // The swarm has no ceiling, and the readout says so rather than guessing.
+      expect(tracks.find((t) => t.enemy === "popup_grunt")!.max).toBeNull();
+    });
   });
 
   it("places spawns on the ring around its origin", () => {

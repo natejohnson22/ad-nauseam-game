@@ -19,10 +19,23 @@ import type { Phase } from "./types";
  * blow-up the old `3 + floor(t/45)` would have reached by 30:00 (~43 per wave).
  * What the middle of a 30-minute run should actually feel like is still open.
  *
- * The one departure from the mechanical stretch: 1:30 × 6 puts the first ogre
- * at 9:00, sixty seconds inside `confidence`. A track spans a whole phase, so
- * the ogre starts at the top of `struggle` instead — which is also where the
- * PDF's advanced melee arrives.
+ * **Issue #31 filled in the roster column.** The table was a grunt track with an
+ * ogre bolted on; it is now the PDF's arrival schedule, each archetype joining
+ * at its phase and persisting from there — the grunt never leaves, because it
+ * is the run's texture and an arena with no chip damage feels empty. Two
+ * consequences worth seeing in the numbers below:
+ *
+ * - The Ogre was promoted to mini-boss, so it now arrives at **15:00** rather
+ *   than 10:00, and Struggle is carried by the Cookie Banner instead. That is
+ *   the phase the PDF describes as hordes and traps, which is the Banner's job.
+ * - Every heavy track carries a `max`. The Ogre's old interval ramp (11→9.5s,
+ *   uncapped) would put ~35 of them on the board across a phase; capped at one,
+ *   the interval means "how long after the last one dies", so it lengthened by
+ *   roughly a factor of two. The two numbers are not comparable and the new one
+ *   has never been played.
+ *
+ * The arrival *schedule* is the PDF's and is settled. Every rate below it is
+ * provisional in exactly the sense the stretched grunt curve is.
  */
 export const PHASES = [
   {
@@ -47,7 +60,13 @@ export const PHASES = [
     start: 300,
     end: 600,
     levelUps: [3, 4],
-    tracks: [{ enemy: "popup_grunt", interval: [1.95, 1.7], wave: [4, 5] }],
+    tracks: [
+      { enemy: "popup_grunt", interval: [1.95, 1.7], wave: [4, 5] },
+      /* Basic ranged arrives. Capped low: the Pixel's whole job here is to
+         interrupt a comfortable kiting circle, and six of them is not an
+         interruption, it is a different phase. */
+      { enemy: "tracking_pixel", interval: [8, 6], wave: [1, 2], max: 5 },
+    ],
   },
   {
     id: "struggle",
@@ -57,7 +76,10 @@ export const PHASES = [
     levelUps: [2, 3],
     tracks: [
       { enemy: "popup_grunt", interval: [1.7, 1.45], wave: [5, 6] },
-      { enemy: "autoplay_ogre", interval: [11, 9.5], wave: [1, 1] },
+      { enemy: "tracking_pixel", interval: [6, 5], wave: [2, 2], max: 8 },
+      /* Advanced melee. Three overlapping slow fields is already most of the
+         arena's usable ground — this is the number likeliest to be wrong. */
+      { enemy: "cookie_banner", interval: [14, 11], wave: [1, 1], max: 3 },
     ],
   },
   {
@@ -68,7 +90,11 @@ export const PHASES = [
     levelUps: [2, 3],
     tracks: [
       { enemy: "popup_grunt", interval: [1.45, 1.2], wave: [6, 7] },
-      { enemy: "autoplay_ogre", interval: [9.5, 8], wave: [1, 1] },
+      { enemy: "tracking_pixel", interval: [5, 4.5], wave: [2, 3], max: 10 },
+      { enemy: "cookie_banner", interval: [11, 9], wave: [1, 1], max: 4 },
+      /* The mini-boss, and the phase's shock. `max: 1` is the whole of what
+         makes it one — see the field's note in `types.ts`. */
+      { enemy: "autoplay_ogre", interval: [22, 18], wave: [1, 1], max: 1 },
     ],
   },
   {
@@ -79,7 +105,13 @@ export const PHASES = [
     levelUps: [3, 4],
     tracks: [
       { enemy: "popup_grunt", interval: [1.2, 0.95], wave: [7, 8] },
-      { enemy: "autoplay_ogre", interval: [8, 6.5], wave: [1, 1] },
+      { enemy: "tracking_pixel", interval: [4.5, 4], wave: [3, 3], max: 12 },
+      { enemy: "cookie_banner", interval: [9, 8], wave: [1, 2], max: 5 },
+      { enemy: "autoplay_ogre", interval: [18, 15], wave: [1, 1], max: 1 },
+      /* Advanced ranged, and the run's only threat that attacks the player's
+         output rather than their health. Deliberately the rarest thing on the
+         board — the lockout is only fair while it is an event. */
+      { enemy: "paywall", interval: [24, 20], wave: [1, 1], max: 2 },
     ],
   },
   {
@@ -91,7 +123,16 @@ export const PHASES = [
     levelUps: [0, 0],
     tracks: [
       { enemy: "popup_grunt", interval: [0.95, 0.7], wave: [8, 9] },
-      { enemy: "autoplay_ogre", interval: [6.5, 5], wave: [1, 1] },
+      { enemy: "tracking_pixel", interval: [4, 3.5], wave: [3, 4], max: 14 },
+      { enemy: "cookie_banner", interval: [8, 7], wave: [2, 2], max: 6 },
+      { enemy: "autoplay_ogre", interval: [15, 12], wave: [1, 1], max: 1 },
+      { enemy: "paywall", interval: [20, 16], wave: [1, 1], max: 3 },
+      /* The final boss. A track like any other, `max: 1`, and a long interval
+         so that killing it does not immediately hand you another — but a boss
+         that respawns *at all* is wrong, and #37 owns the ending: killing this
+         thing before 30:00 is the win condition, which the run does not yet
+         know about. Until then it is a very large enemy in the last phase. */
+      { enemy: "the_algorithm", interval: [90, 90], wave: [1, 1], max: 1 },
     ],
   },
 ] as const satisfies readonly Phase[];

@@ -10,6 +10,10 @@
  * that needed a case (`Enemy#tick`, `WeaponManager#fire`, `#modArc`,
  * `#modProjectiles`) rather than leaving them to be found by playing. Both
  * unions are now complete for Prototype 1.
+ *
+ * Issue #31 collects on the same bet a third time, at three times the size:
+ * `EnemyBehavior` goes from two arms to four, and the six archetypes the PDF
+ * asks for are built from them.
  */
 
 import type { EnemyId } from "./enemies";
@@ -27,8 +31,58 @@ export type Mutable<T> = { -readonly [K in keyof T]: T[K] };
  * `EnemyData`, which is what deletes them from the grunt: in the `.tres` files
  * the Popup Grunt carries a full set of ogre defaults it never reads.
  */
+/**
+ * What a `ranged_standoff` shot does on top of its damage (issue #31).
+ *
+ * This is where "advanced" lives for the ranged half of the roster. The
+ * behaviour arm is shared by all three shooters — the Pixel, the Paywall, and
+ * the boss — so if the difference between basic and advanced were expressed on
+ * the arm it would be nothing but bigger numbers, which is the stat reskin the
+ * roster ticket ruled out. Putting it on the projectile means the Paywall
+ * differs from the Pixel in *what its shot does to you*, not in how it stands.
+ */
+export type EnemyShot =
+  | { readonly kind: "bolt" }
+  | {
+      readonly kind: "lockout";
+      /**
+       * Seconds the player's weapons go quiet for. "Subscribe to continue."
+       *
+       * The only thing in the game that attacks the player's *output* rather
+       * than their health — which is the point of it landing in Pro Struggle,
+       * where a built-out player has damage upgrades that make HP damage
+       * unfrightening. Kept short and its source kept rare on purpose: a
+       * silence is the most resented effect in games when it is frequent, and
+       * the shot that carries it is slow, telegraphed, and dodgeable.
+       */
+      readonly seconds: number;
+    };
+
 export type EnemyBehavior =
   | { readonly kind: "chase" }
+  /**
+   * Chases like a grunt and drags a slow field behind it — the Cookie Banner
+   * (issue #31), and the roster's answer to "advanced melee".
+   *
+   * The player's only defence is movement, so an advanced enemy has to make
+   * movement cost something; a bigger, angrier chaser is still solved by
+   * walking away. This denies space without denying passage, which is the
+   * difference between tension and a death sentence in an arena where nothing
+   * is solid.
+   *
+   * An arm rather than an optional `aura` field on `EnemyData`, because an
+   * optional field that one archetype in six reads is `target_weapon_id: &""`
+   * returning — see the note above. The cost is that a *ranged* aura would want
+   * a fifth arm rather than composing; that is a trade to revisit if auras ever
+   * spread past this one enemy.
+   */
+  | {
+      readonly kind: "chase_aura";
+      /** How far the slow reaches from the enemy's centre. */
+      readonly radius: number;
+      /** What the player's speed is multiplied by inside it. */
+      readonly speedMult: number;
+    }
   | {
       readonly kind: "telegraph_aoe";
       /** Seconds between blasts, counted only while chasing. */
@@ -37,6 +91,34 @@ export type EnemyBehavior =
       readonly telegraph: number;
       readonly radius: number;
       readonly damage: number;
+    }
+  /**
+   * Holds at range and fires aimed shots — the roster's whole ranged half
+   * (issue #31): Tracking Pixel, Paywall, and The Algorithm on one arm.
+   *
+   * The inverse of every melee threat in the game. Melee says *don't stand
+   * still*; a standoff shooter aims where you are at the instant it fires, so
+   * it says *don't move predictably*, and it is what punishes the comfortable
+   * kiting circle the Confidence phase lets the player settle into.
+   *
+   * Shots are **aimed, not homing** — dodged by moving, so movement stays the
+   * answer to everything.
+   */
+  | {
+      readonly kind: "ranged_standoff";
+      /** Closes to this distance, then plants. */
+      readonly range: number;
+      /** Backs away inside this, so it never degenerates into a slow chaser. */
+      readonly minRange: number;
+      /** Seconds between shots, counted only while not winding up. */
+      readonly interval: number;
+      /** Seconds the muzzle flares before the shot leaves — the player's cue. */
+      readonly telegraph: number;
+      readonly damage: number;
+      readonly projectileSpeed: number;
+      /** How far a shot flies before it fizzles. */
+      readonly travelDistance: number;
+      readonly shot: EnemyShot;
     };
 
 export interface EnemyData {
@@ -150,6 +232,23 @@ export interface SpawnTrack {
   readonly interval: Ramp;
   /** Enemies per wave; lerped, then rounded at spawn time. */
   readonly wave: Ramp;
+  /**
+   * At most this many of this archetype alive at once. Absent is uncapped,
+   * which is what every ordinary swarm track wants.
+   *
+   * This is the whole of what a **mini-boss** is in this game (issue #31):
+   * a track with `max: 1`. There is no mini-boss concept in the code, no
+   * separate scheduler, and no clock-time appointment — the Ogre respawns some
+   * interval after the last one dies, so its arrival is unpredictable in
+   * timing. If a mini-boss ever needs to be an *announced* moment, that is the
+   * event scheduler the hordes-and-rings ticket (#34) has to invent anyway,
+   * and this field should not grow into half of it.
+   *
+   * It usefully caps the merely-heavy too: an uncapped Cookie Banner track
+   * carpets the arena in slow fields, since nothing but the player's damage
+   * removes one.
+   */
+  readonly max?: number;
 }
 
 /**

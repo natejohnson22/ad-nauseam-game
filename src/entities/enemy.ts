@@ -31,6 +31,21 @@ export interface EnemyEvents {
       the last hit on a grunt reports the whole swing. See `takeDamage`. */
   onEnemyDamaged(enemy: Enemy, amount: number): void;
   onEnemyDied(enemy: Enemy): void;
+  /**
+   * A `ranged_standoff` enemy's wind-up has finished and a shot leaves now,
+   * from this enemy's position along `dir` (issue #31).
+   *
+   * Here rather than the enemy holding a projectile pool, for the same reason
+   * the director never sees a `Pool<Enemy>`: the scene is the only thing that
+   * owns pools, and an enemy that could reach one would be a second place
+   * spawning happens. `dir` is a shared scratch vector — the implementation
+   * must consume it on the call, not keep it.
+   */
+  onEnemyFired(
+    enemy: Enemy,
+    behavior: Extract<EnemyBehavior, { kind: "ranged_standoff" }>,
+    dir: Phaser.Math.Vector2,
+  ): void;
 }
 
 export class Enemy extends PooledSprite {
@@ -41,6 +56,12 @@ export class Enemy extends PooledSprite {
   /** The telegraph ring's stroke, `Color(1.0, 0.35, 0.1)` and 3px in Godot. */
   private static readonly TELEGRAPH_COLOR = 0xff591a;
   private static readonly TELEGRAPH_THICKNESS = 3;
+  /** How faint a standing slow field is drawn — present, never alarming. */
+  private static readonly AURA_ALPHA = 0.22;
+  /** How far a shooter's muzzle flare sits outside its body. */
+  private static readonly MUZZLE_MARGIN = 8;
+  /** Reused for every shot's aim, so firing allocates nothing. */
+  private static readonly aim = new Phaser.Math.Vector2();
 
   /**
    * A per-spawn identity, handed out monotonically.
@@ -66,13 +87,21 @@ export class Enemy extends PooledSprite {
   /** Last flash value pushed to the tint, so the tint is set only on change. */
   private tintedAt = -1;
 
-  /** `telegraph_aoe` only; `chase` enemies leave all three untouched. */
-  private aoeState: "idle" | "winding" = "idle";
-  private aoeCd = 0;
-  private aoeWind = 0;
+  /**
+   * The wind-up clock, shared by both attacking arms — `telegraph_aoe`'s blast
+   * and `ranged_standoff`'s shot are the same two-state machine with a
+   * different payload (issue #31). `chase` and `chase_aura` leave all three
+   * untouched.
+   */
+  private attackState: "idle" | "winding" = "idle";
+  private attackCd = 0;
+  private attackWind = 0;
 
   /**
-   * The danger ring, drawn only while winding.
+   * The ring: a danger telegraph on the attacking arms, and a standing slow
+   * field on `chase_aura`. One sprite serving both because an archetype has
+   * exactly one behaviour, so the two uses can never collide — `spawn` decides
+   * which it is.
    *
    * A second sprite rather than part of the enemy's own, because Godot draws
    * both in one `_draw` and Phaser sprites have no child transforms — the same
@@ -111,24 +140,66 @@ export class Enemy extends PooledSprite {
     this.tintedAt = -1;
     this.spawnId = Enemy.nextSpawnId++;
 
-    this.aoeState = "idle";
-    this.aoeWind = 0;
-    // `setup()`'s `_aoe_cd = d.aoe_interval`: an ogre chases for a full interval
-    // before its first wind-up, so it never blasts the moment it arrives.
-    this.aoeCd =
-      data.behavior.kind === "telegraph_aoe" ? data.behavior.interval : 0;
+    this.attackState = "idle";
+    this.attackWind = 0;
+    this.attackCd = 0;
     this.ring.setVisible(false);
-    if (data.behavior.kind === "telegraph_aoe") {
-      this.ring.setTexture(
-        ringTexture(this.scene, data.behavior.radius, Enemy.TELEGRAPH_THICKNESS),
-      );
-    }
 
     this.setPosition(x, y);
     // One baked texture per archetype radius, not one scaled texture: scaling a
     // tiny circle up is how placeholder art ends up looking like a smudge.
     this.setTexture(circleTexture(this.scene, data.radius));
     this.refreshTint();
+    // After the position, so a standing aura is drawn where the enemy actually
+    // is on its first frame rather than wherever the pool last left it.
+    this.resetRing(data.behavior);
+  }
+
+  /**
+   * Point the ring at whatever this archetype uses it for, and seed the attack
+   * clock. Both arms that attack wait a full interval before their first
+   * wind-up — `setup()`'s `_aoe_cd = d.aoe_interval` — so an enemy never fires
+   * the instant it arrives, which would be unreadable in the middle of a wave.
+   */
+  private resetRing(behavior: EnemyBehavior): void {
+    switch (behavior.kind) {
+      case "chase":
+        break;
+      case "chase_aura":
+        // Standing, not telegraphing: the field is always there, so it is drawn
+        // in the enemy's own colour at low alpha rather than in danger-orange.
+        this.ring.setTexture(
+          ringTexture(this.scene, behavior.radius, Enemy.TELEGRAPH_THICKNESS),
+        );
+        this.ring
+          .setTint(this.archetype.color)
+          .setAlpha(Enemy.AURA_ALPHA)
+          .setPosition(this.x, this.y)
+          .setVisible(true);
+        break;
+      case "telegraph_aoe":
+        this.attackCd = behavior.interval;
+        this.ring
+          .setTexture(
+            ringTexture(this.scene, behavior.radius, Enemy.TELEGRAPH_THICKNESS),
+          )
+          .setTint(Enemy.TELEGRAPH_COLOR);
+        break;
+      case "ranged_standoff":
+        this.attackCd = behavior.interval;
+        // Tight to the body — a muzzle flare, not a danger zone. The danger is
+        // the shot that follows, and it is somewhere else a moment later.
+        this.ring
+          .setTexture(
+            ringTexture(
+              this.scene,
+              this.archetype.radius + Enemy.MUZZLE_MARGIN,
+              Enemy.TELEGRAPH_THICKNESS,
+            ),
+          )
+          .setTint(Enemy.TELEGRAPH_COLOR);
+        break;
+    }
   }
 
   tick(delta: number): void {
@@ -137,8 +208,14 @@ export class Enemy extends PooledSprite {
       case "chase":
         this.chase(delta);
         break;
+      case "chase_aura":
+        this.tickAura(delta, behavior);
+        break;
       case "telegraph_aoe":
         this.tickAoe(delta, behavior);
+        break;
+      case "ranged_standoff":
+        this.tickStandoff(delta, behavior);
         break;
     }
 
@@ -160,6 +237,107 @@ export class Enemy extends PooledSprite {
   }
 
   /**
+   * The Cookie Banner: chases like a grunt, and slows the player while they are
+   * inside its field (issue #31).
+   *
+   * The slow is pushed to the player rather than pulled by them, because the
+   * player would otherwise have to scan every live enemy every frame to find
+   * the one or two with auras — the same scan `WeaponManager.nearestEnemy` pays
+   * for once, multiplied by a swarm. Pushing means only the handful of enemies
+   * that *have* a field do any work. `Player.applySlow` takes the minimum, so
+   * overlapping banners do not compound.
+   */
+  private tickAura(
+    delta: number,
+    behavior: Extract<EnemyBehavior, { kind: "chase_aura" }>,
+  ): void {
+    this.chase(delta);
+    this.ring.setPosition(this.x, this.y);
+
+    const d = Phaser.Math.Distance.Between(
+      this.x,
+      this.y,
+      this.player.x,
+      this.player.y,
+    );
+    if (d <= behavior.radius) this.player.applySlow(behavior.speedMult);
+  }
+
+  /**
+   * The ranged half of the roster — Tracking Pixel, Paywall, and the boss all
+   * run this (issue #31).
+   *
+   * Three zones rather than two: close to `range`, back off inside `minRange`,
+   * hold in the band between. The retreat is what stops a shooter degenerating
+   * into a slow chaser once the player walks at it, and the band is what stops
+   * it jittering between advance and retreat on a single threshold.
+   *
+   * It plants while winding up, exactly as the Ogre does. That stillness *is*
+   * the telegraph as much as the flare is: an enemy that stops moving in this
+   * game is about to do something.
+   */
+  private tickStandoff(
+    delta: number,
+    behavior: Extract<EnemyBehavior, { kind: "ranged_standoff" }>,
+  ): void {
+    if (this.attackState === "idle") {
+      const dx = this.player.x - this.x;
+      const dy = this.player.y - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 1) {
+        // +1 toward the player when too far, -1 away when too close, 0 in the
+        // band — one expression rather than a branch per zone.
+        const sign = d > behavior.range ? 1 : d < behavior.minRange ? -1 : 0;
+        const step = this.archetype.speed * delta * sign;
+        this.x += (dx / d) * step;
+        this.y += (dy / d) * step;
+      }
+
+      this.attackCd -= delta;
+      if (this.attackCd <= 0) {
+        this.attackState = "winding";
+        this.attackWind = behavior.telegraph;
+      }
+      return;
+    }
+
+    this.attackWind -= delta;
+    if (this.attackWind <= 0) {
+      this.fire(behavior);
+      this.attackState = "idle";
+      this.attackCd = behavior.interval;
+      this.ring.setVisible(false);
+      return;
+    }
+
+    // Brightening as the shot nears, as the Ogre's ring does — one visual
+    // grammar for "something is about to happen here".
+    const t = 1 - this.attackWind / Math.max(0.01, behavior.telegraph);
+    this.ring
+      .setPosition(this.x, this.y)
+      .setAlpha(0.35 + 0.4 * t)
+      .setVisible(true);
+  }
+
+  /**
+   * Aimed at where the player is **now**, at the instant the shot leaves — not
+   * at where they were when the wind-up started. Leading the wind-up would make
+   * standing still the safe play, which is the opposite of what this enemy is
+   * for; aiming late means the dodge is to keep moving through the flare.
+   */
+  private fire(
+    behavior: Extract<EnemyBehavior, { kind: "ranged_standoff" }>,
+  ): void {
+    const dir = Enemy.aim
+      .set(this.player.x - this.x, this.player.y - this.y)
+      .normalize();
+    // A player standing exactly on the shooter normalises to (0,0); fire right
+    // rather than spawn a projectile that never moves and never expires.
+    if (dir.length() < 0.001) dir.set(1, 0);
+    this.events.onEnemyFired(this, behavior, dir);
+  }
+
+  /**
    * The Autoplay Video Ogre's two-state machine: chase while `IDLE`, plant and
    * telegraph while `WINDING`, then blast whatever is still inside the ring.
    *
@@ -171,21 +349,21 @@ export class Enemy extends PooledSprite {
     delta: number,
     behavior: Extract<EnemyBehavior, { kind: "telegraph_aoe" }>,
   ): void {
-    if (this.aoeState === "idle") {
+    if (this.attackState === "idle") {
       this.chase(delta);
-      this.aoeCd -= delta;
-      if (this.aoeCd <= 0) {
-        this.aoeState = "winding";
-        this.aoeWind = behavior.telegraph;
+      this.attackCd -= delta;
+      if (this.attackCd <= 0) {
+        this.attackState = "winding";
+        this.attackWind = behavior.telegraph;
       }
       return;
     }
 
-    this.aoeWind -= delta;
-    if (this.aoeWind <= 0) {
+    this.attackWind -= delta;
+    if (this.attackWind <= 0) {
       this.blast(behavior);
-      this.aoeState = "idle";
-      this.aoeCd = behavior.interval;
+      this.attackState = "idle";
+      this.attackCd = behavior.interval;
       this.ring.setVisible(false);
       return;
     }
@@ -193,7 +371,7 @@ export class Enemy extends PooledSprite {
     // Brightening as the blast nears, per `_draw`. The ring is re-positioned
     // every frame despite the ogre being planted: `takeDamage`'s knockback
     // teleports it mid-wind, and a ring left behind would lie about the blast.
-    const t = 1 - this.aoeWind / Math.max(0.01, behavior.telegraph);
+    const t = 1 - this.attackWind / Math.max(0.01, behavior.telegraph);
     this.ring
       .setPosition(this.x, this.y)
       .setAlpha(0.35 + 0.4 * t)

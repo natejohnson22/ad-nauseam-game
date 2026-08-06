@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import type { EnemyBehavior } from "../content/types";
 import type { Upgrade } from "../content/upgrades";
 import { UPGRADE_POOL } from "../content/upgrades";
 import { WEAPONS } from "../content/weapons";
@@ -10,6 +11,7 @@ import { Boomerang } from "../entities/boomerang";
 import { DamageNumber } from "../entities/damage-number";
 import { Engagement } from "../entities/engagement";
 import { Enemy } from "../entities/enemy";
+import { EnemyProjectile } from "../entities/enemy-projectile";
 import { Player } from "../entities/player";
 import { SwordSwing } from "../entities/sword-swing";
 import { Progression } from "../systems/progression";
@@ -41,6 +43,7 @@ export class GameScene extends Phaser.Scene {
   private controls!: Controls;
   private player!: Player;
   private enemies!: Pool<Enemy>;
+  private enemyShots!: Pool<EnemyProjectile>;
   private swings!: Pool<SwordSwing>;
   private boomerangs!: Pool<Boomerang>;
   private drops!: Pool<Engagement>;
@@ -71,6 +74,7 @@ export class GameScene extends Phaser.Scene {
     this.run = new Run(this.bus);
 
     this.enemies = new Pool(this, Enemy);
+    this.enemyShots = new Pool(this, EnemyProjectile);
     this.swings = new Pool(this, SwordSwing);
     this.boomerangs = new Pool(this, Boomerang);
     this.drops = new Pool(this, Engagement);
@@ -104,6 +108,12 @@ export class GameScene extends Phaser.Scene {
       {
         spawn: (data, x, y) =>
           this.enemies.obtain().spawn(data, x, y, this.player, this),
+        // Compared by reference, which is exactly right: `ENEMIES` records are
+        // module singletons and `spawn` hands the same object to the enemy, so
+        // identity *is* archetype identity — no id has to be carried around to
+        // ask this question (issue #31).
+        liveCount: (data) =>
+          this.enemies.active().filter((e) => e.archetype === data).length,
       },
       this.player,
     );
@@ -161,6 +171,10 @@ export class GameScene extends Phaser.Scene {
     // After `run.tick`, so the director reads this frame's elapsed time.
     this.director.tick(dt, this.run.elapsed);
     this.enemies.each((enemy) => enemy.tick(dt));
+    // After the enemies that fire them, so a shot spawned this frame does not
+    // also travel this frame — it would otherwise leave the muzzle already a
+    // step out, which is exactly the distance the telegraph promised.
+    this.enemyShots.each((shot) => shot.tick(dt));
     this.weapons.tick(dt);
     this.swings.each((swing) => swing.tick(dt));
     this.boomerangs.each((boomerang) => boomerang.tick(dt));
@@ -184,6 +198,25 @@ export class GameScene extends Phaser.Scene {
     this.damageNumbers
       .obtain()
       .spawn(amount, enemy.x, enemy.y, enemy.archetype.radius);
+  }
+
+  /**
+   * A standoff enemy's wind-up finished — put a projectile in the world
+   * (issue #31).
+   *
+   * The third of the small sinks that live here for the same reason as the
+   * other two: this is the only object that holds both the pool and the player,
+   * and an enemy that could reach a pool itself would be a second place
+   * spawning happens.
+   */
+  onEnemyFired(
+    enemy: Enemy,
+    behavior: Extract<EnemyBehavior, { kind: "ranged_standoff" }>,
+    dir: Phaser.Math.Vector2,
+  ): void {
+    this.enemyShots
+      .obtain()
+      .spawn(behavior, enemy.x, enemy.y, dir, this.player);
   }
 
   /** `main.gd`'s `_on_enemy_died`: count the kill, drop the engagement. */

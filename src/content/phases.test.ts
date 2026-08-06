@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { PHASES, RUN_LENGTH, phaseAt, progressIn } from "./phases";
+import type { SpawnTrack } from "./types";
+
+/**
+ * `PHASES` is `as const`, so a track whose `max` is absent has no such property
+ * *in its type* — the literal type is narrower than `SpawnTrack`. Reading the
+ * table back through the declared type is what lets a test ask "is this one
+ * capped?" of every row alike.
+ */
+const tracksOf = (phase: (typeof PHASES)[number]): readonly SpawnTrack[] =>
+  phase.tracks;
 
 /**
  * The table is data, so most of what is worth asserting is its *shape* — the
@@ -44,6 +54,51 @@ describe("the phase table", () => {
       [3, 4],
       [0, 0],
     ]);
+  });
+
+  /**
+   * The roster column is the PDF's brief rather than a tuning number, so unlike
+   * the rates it is worth pinning (issue #31). What these protect is the
+   * *shape* of the arc: a tuning pass that quietly drops an archetype from a
+   * phase has changed the design, not the difficulty.
+   */
+  it("introduces each archetype at the phase the PDF gives it", () => {
+    const arrives = (enemy: string): string =>
+      PHASES.find((p) => p.tracks.some((t) => t.enemy === enemy))!.id;
+
+    expect(arrives("popup_grunt")).toBe("quick_start");
+    expect(arrives("tracking_pixel")).toBe("confidence");
+    expect(arrives("cookie_banner")).toBe("struggle");
+    // Promoted to mini-boss, so it opens Panic rather than Struggle.
+    expect(arrives("autoplay_ogre")).toBe("panic");
+    expect(arrives("paywall")).toBe("pro_struggle");
+    expect(arrives("the_algorithm")).toBe("god_tier");
+  });
+
+  it("never drops an archetype once it has arrived", () => {
+    let previous = new Set<string>();
+    for (const phase of PHASES) {
+      const roster = new Set(phase.tracks.map((t) => t.enemy));
+      for (const enemy of previous) expect(roster).toContain(enemy);
+      previous = roster;
+    }
+  });
+
+  it("caps every archetype that is not swarm texture", () => {
+    // The Grunt is the only thing on the board with no ceiling. Everything
+    // else is heavy enough that an uncapped track carpets the arena.
+    for (const phase of PHASES)
+      for (const track of tracksOf(phase)) {
+        if (track.enemy === "popup_grunt") expect(track.max).toBeUndefined();
+        else expect(track.max).toBeGreaterThanOrEqual(1);
+      }
+  });
+
+  it("keeps the mini-boss and the boss singular wherever they appear", () => {
+    for (const phase of PHASES)
+      for (const track of tracksOf(phase))
+        if (track.enemy === "autoplay_ogre" || track.enemy === "the_algorithm")
+          expect(track.max).toBe(1);
   });
 
   it("never lets a track's wave size fall to nothing", () => {

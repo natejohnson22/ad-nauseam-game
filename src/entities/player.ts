@@ -36,6 +36,24 @@ export class Player extends Phaser.GameObjects.Sprite {
   invulnerable = false;
 
   private alive = true;
+  /**
+   * This frame's slow field, as a multiplier — the Cookie Banner's aura
+   * (issue #31). Rebuilt every frame from scratch: enemies push into it during
+   * their own tick and `tick` consumes and clears it, so walking out of a field
+   * restores full speed on the next frame with nothing to un-apply. It is
+   * separate from `speedMult` for exactly that reason — `speedMult` is the
+   * upgrade, permanent and owned by `Progression`, and a transient effect that
+   * multiplied into it would leak a permanent nerf the first time an enemy died
+   * mid-field.
+   *
+   * `min` rather than a product: standing in three overlapping fields is as
+   * slow as the worst of them, not 0.17x. Overlap is common — banners cluster —
+   * and stacking multiplicatively is how the player ends up unable to move at
+   * all, which is the death sentence this whole mechanic was chosen to avoid.
+   */
+  private slowMult = 1;
+  /** Seconds of Paywall lockout left — see `silence`. */
+  private silenceLeft = 0;
   private readonly pip: Phaser.GameObjects.Sprite;
 
   constructor(
@@ -65,12 +83,45 @@ export class Player extends Phaser.GameObjects.Sprite {
     return this.alive;
   }
 
+  /**
+   * Slow the player for this frame — called by `chase_aura` enemies from their
+   * own tick, which runs *after* this one in `GameScene.update`. So the field
+   * a player is standing in takes effect one frame late, which at 60fps is 4px
+   * of travel and not worth reordering the update loop over.
+   */
+  applySlow(mult: number): void {
+    this.slowMult = Math.min(this.slowMult, mult);
+  }
+
+  /**
+   * Take the player's weapons away for `seconds` — the Paywall's lockout.
+   *
+   * Ignored while invulnerable, so the playtest harness's `i` really does mean
+   * "nothing the enemies do lands on me" rather than "no damage, but still
+   * disarmed" (issue #30).
+   */
+  silence(seconds: number): void {
+    if (!this.alive || this.invulnerable) return;
+    this.silenceLeft = Math.max(this.silenceLeft, seconds);
+  }
+
+  /** Read by `WeaponManager`, which holds fire while it is true. */
+  get silenced(): boolean {
+    return this.silenceLeft > 0;
+  }
+
   tick(delta: number): void {
     if (!this.alive) return;
 
+    this.silenceLeft = Math.max(0, this.silenceLeft - delta);
+
     const dir = this.controls.getMoveVector();
-    this.x += dir.x * Player.BASE_SPEED * this.speedMult * delta;
-    this.y += dir.y * Player.BASE_SPEED * this.speedMult * delta;
+    const speed = Player.BASE_SPEED * this.speedMult * this.slowMult;
+    // Consumed: this frame's fields have been spent, and the enemies still
+    // standing on us will push their own in again before the next one.
+    this.slowMult = 1;
+    this.x += dir.x * speed * delta;
+    this.y += dir.y * speed * delta;
 
     // The facing pip, drawn toward current movement for readability.
     const moving = dir.length() > 0.1;
