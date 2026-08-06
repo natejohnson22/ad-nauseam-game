@@ -192,12 +192,17 @@ export class DevHarness {
         `${Math.round(view.progress * 100)}%  ` +
         `lvl-ups ${view.phase.levelUps.join("-")}` +
         (view.running ? "" : "  [director stopped]"),
+      /* The cap column earns its width (issue #31): a capped track that has
+         hit its ceiling looks identical to a broken one — nothing spawns, the
+         countdown keeps resetting — and "4/4" is the difference between tuning
+         the number and hunting a bug. */
       ...view.tracks.map(
         (track) =>
           `  ${track.displayName.padEnd(20)}` +
           `x${String(track.wave).padEnd(3)}` +
           `every ${track.interval.toFixed(2)}s   ` +
-          `next ${track.nextIn.toFixed(2)}s`,
+          `next ${track.nextIn.toFixed(2)}s   ` +
+          `live ${track.live}${track.max === null ? "" : `/${track.max}`}`,
       ),
       `live  ${liveEnemies()} enemies   ` +
         `hp ${player.hp}${player.invulnerable ? " (INVULN)" : ""}`,

@@ -96,6 +96,13 @@ export class WeaponManager {
   }
 
   tick(delta: number): void {
+    /* The Paywall's lockout (issue #31). The cooldowns are *frozen*, not
+       merely blocked from firing: letting them run down behind the silence
+       would mean the moment it lifts every weapon fires at once, and a debuff
+       that ends in a free volley costs the player nothing but a second of
+       nerves. Frozen, it costs exactly the DPS it says it does. */
+    if (this.player.silenced) return;
+
     for (const weapon of this.weapons) {
       weapon.cd -= delta;
       if (weapon.cd <= 0) {

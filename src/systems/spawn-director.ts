@@ -12,6 +12,10 @@ export interface TrackReadout {
   readonly wave: number;
   /** Seconds until this track fires again. */
   readonly nextIn: number;
+  /** How many of this archetype are alive right now. */
+  readonly live: number;
+  /** The track's concurrency cap, or `null` where it has none. */
+  readonly max: number | null;
 }
 
 /** What the director currently thinks it is doing — see `SpawnDirector.readout`. */
@@ -33,6 +37,17 @@ export interface DirectorReadout {
  */
 export interface SpawnSink {
   spawn(data: EnemyData, x: number, y: number): void;
+  /**
+   * How many of this archetype are alive — what `SpawnTrack.max` is checked
+   * against (issue #31), and the one thing the director needs to know about the
+   * world it has already made.
+   *
+   * Counting is the sink's job because the pool is the sink's to hold; the
+   * director tracking its own spawns would have to be told about every death,
+   * and a director that can be wrong about what is on screen is worse than no
+   * cap at all.
+   */
+  liveCount(data: EnemyData): number;
 }
 
 /** What the spawn ring is drawn around. `Player` satisfies it. */
@@ -134,13 +149,27 @@ export class SpawnDirector {
         interval: lerp(track.interval, t),
         wave: Math.round(lerp(track.wave, t)),
         nextIn: Math.max(0, this.cooldowns.get(track.enemy) ?? 0),
+        live: this.sink.liveCount(ENEMIES[track.enemy]),
+        max: track.max ?? null,
       })),
     };
   }
 
+  /**
+   * One wave, trimmed to whatever room the track's `max` leaves (issue #31).
+   *
+   * A full track still resets its cooldown and simply spawns nothing, so it
+   * re-checks every interval — which is what makes a mini-boss respawn *some
+   * time after* the last one dies rather than the instant the slot frees. A
+   * partial trim is deliberate too: a wave of 3 against 1 slot left lands one
+   * enemy, because the cap is a statement about how many may be on screen, not
+   * about wave sizes.
+   */
   private spawnWave(track: SpawnTrack, t: number): void {
     const data = ENEMIES[track.enemy];
-    const count = Math.round(lerp(track.wave, t));
+    let count = Math.round(lerp(track.wave, t));
+    if (track.max !== undefined)
+      count = Math.min(count, track.max - this.sink.liveCount(data));
     for (let i = 0; i < count; i++) this.spawn(data);
   }
 
