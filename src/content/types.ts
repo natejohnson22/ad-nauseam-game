@@ -17,6 +17,11 @@
  */
 
 import type { EnemyId } from "./enemies";
+// Type-only, and deliberately circular: `phases.ts` imports `Phase` and friends
+// from here, and `UpgradeData.unlockedFrom` names a phase back. Nothing is
+// emitted for either edge, and the alternative — a third module holding
+// `PhaseId` alone — separates the id from the table that defines it (issue #32).
+import type { PhaseId } from "./phases";
 import type { WeaponId } from "./weapons";
 
 /** Strips `readonly` for the per-run copies upgrades mutate (WeaponManager). */
@@ -194,7 +199,17 @@ export type UpgradeEffect =
   | { readonly kind: "weapon_arc_add"; readonly weapon: WeaponId; readonly degrees: number }
   | { readonly kind: "weapon_projectile_add"; readonly weapon: WeaponId; readonly count: number }
   | { readonly kind: "player_speed_mult"; readonly amount: number }
-  | { readonly kind: "player_cooldown_mult"; readonly amount: number };
+  | { readonly kind: "player_cooldown_mult"; readonly amount: number }
+  /**
+   * Hands the player a weapon they do not have — how the boomerang arrives at
+   * 3:00 (issue #32), and how every weapon after it will.
+   *
+   * The id and nothing else. `WeaponManager` resolves it against `WEAPONS`,
+   * which is what keeps `Progression` importing content *types* and never
+   * content *values*: a class that has no business knowing a boomerang's
+   * projectile speed should not be handed one to pass along.
+   */
+  | { readonly kind: "grant_weapon"; readonly weapon: WeaponId };
 
 export interface UpgradeData {
   readonly title: string;
@@ -202,6 +217,32 @@ export interface UpgradeData {
   readonly effect: UpgradeEffect;
   /** How many times this may be taken in one run — keeps the pool fresh. */
   readonly maxStacks: number;
+  /**
+   * The phase this may first be offered in; absent means from 0:00 (issue #32).
+   *
+   * One of the two gates on a pick. This one is **declared**, because "not
+   * before Confidence" is a pacing decision that lives nowhere else. The other
+   * — that a weapon's upgrades wait for the weapon — is **inferred** from
+   * `effect.weapon` rather than written down, because the effect already says
+   * which weapon it touches and a `requires` field would be that same fact
+   * restated in a form that can drift.
+   */
+  readonly unlockedFrom?: PhaseId;
+  /**
+   * Occupies a slot in **every** roll from the moment its gate opens until it is
+   * taken, ahead of the shuffle (issue #32).
+   *
+   * The boomerang's arrival cannot be a dice roll — every phase from Confidence
+   * on is tuned assuming the player has a ranged weapon — but a timed grant
+   * would take the run's biggest early moment out of the level-up modal, which
+   * the map protects as the heart of the prototype. Guaranteeing the *offer*
+   * and not the *pick* costs the player one of three slots and keeps the choice
+   * theirs: declining is a decision, where never being offered is a dice roll.
+   *
+   * Deliberately a plain flag rather than a weapon special case — if two are
+   * ever eligible at once they take two slots, with no rule to add.
+   */
+  readonly guaranteed?: boolean;
 }
 
 // ------------------------------------------------------------------- phases

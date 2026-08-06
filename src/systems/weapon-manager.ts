@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { Mutable, WeaponData } from "../content/types";
-import type { WeaponId } from "../content/weapons";
+import { WEAPONS, type WeaponId } from "../content/weapons";
 import type { Controls } from "../core/controls";
 import type { Pool } from "../core/pool";
 import type { Boomerang } from "../entities/boomerang";
@@ -45,6 +45,27 @@ export class WeaponManager {
   addWeapon(id: WeaponId, data: WeaponData): void {
     // 0.15s so the first swing lands almost immediately, as in Godot.
     this.weapons.push({ id, data: { ...data }, cd: 0.15 });
+  }
+
+  /**
+   * Equips a weapon from the `grant_weapon` pick (issue #32).
+   *
+   * The `WEAPONS` lookup lives here rather than in `Progression`, which is the
+   * whole point of the effect carrying an id and no data: the tested core stays
+   * on content *types* and never imports a content *value*, so nothing drags a
+   * boomerang's projectile speed through a class that only does XP arithmetic.
+   *
+   * The 0.15s first cooldown means a weapon granted mid-fight fires almost at
+   * once — the pick has a visible consequence before the modal has faded.
+   */
+  grantWeapon(id: WeaponId): void {
+    if (this.hasWeapon(id)) return;
+    this.addWeapon(id, WEAPONS[id]);
+  }
+
+  /** Whether this run is carrying it — what gates the weapon's own upgrades. */
+  hasWeapon(id: WeaponId): boolean {
+    return this.find(id) !== undefined;
   }
 
   // ------------------------------------------- upgrade hooks (Progression)

@@ -159,6 +159,20 @@ export function phaseAt(elapsed: number): Phase {
   return PHASES[PHASES.length - 1]!;
 }
 
+/**
+ * When `id` opens — what a phase-gated upgrade compares the clock against
+ * (issue #32).
+ *
+ * The reason `unlockedFrom` is a `PhaseId` and not a number of seconds: seven
+ * tuning passes are coming and any of them may move a boundary. A gate that
+ * names its phase moves with the table; a gate that names 180 quietly stops
+ * meaning "when Slow build opens" the first time Slow build doesn't open at
+ * 3:00.
+ */
+export function startOf(id: PhaseId): number {
+  return PHASES.find((phase) => phase.id === id)!.start;
+}
+
 /** Where `elapsed` sits inside `phase`, as 0..1 — what every ramp lerps on. */
 export function progressIn(phase: Phase, elapsed: number): number {
   const t = (elapsed - phase.start) / (phase.end - phase.start);

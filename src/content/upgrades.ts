@@ -27,17 +27,49 @@ export const UPGRADES = {
     effect: { kind: "weapon_arc_add", weapon: "adblock_sword", degrees: 25 },
     maxStacks: 4,
   },
+  /**
+   * How the Do Not Track Boomerang arrives (issue #32) — a pick, not a grant.
+   *
+   * `unlockedFrom` puts it in the PDF's 3–5 window and `guaranteed` makes it the
+   * first thing offered in every roll from then until taken, so the ranged
+   * weapon cannot simply fail to come up. Its arrival is therefore only as
+   * prompt as the player's next level-up, which is on purpose: the weapon
+   * showing up is a consequence of how the opening was played rather than an
+   * appointment the director keeps.
+   *
+   * `maxStacks: 1` is belt and braces — the weapon gate stops offering a grant
+   * for a weapon already owned, so this can never be taken twice anyway.
+   */
+  grant_boomerang: {
+    title: "Do Not Track",
+    description: "Gain the Do Not Track Boomerang",
+    effect: { kind: "grant_weapon", weapon: "dnt_boomerang" },
+    maxStacks: 1,
+    unlockedFrom: "slow_build",
+    guaranteed: true,
+  },
   boomerang_damage: {
     title: "Sharper Signal",
     description: "+50 Do Not Track Boomerang damage",
     effect: { kind: "weapon_damage_add", weapon: "dnt_boomerang", amount: 50 },
     maxStacks: 6,
   },
+  /**
+   * The PDF's "multi-shot becomes available" at 5–10, which is a phase gate and
+   * nothing more (issue #32) — no guarantee, because *available* is not
+   * *promised*.
+   *
+   * The only record carrying both gates: `unlockedFrom` holds it to Confidence,
+   * and the inferred weapon gate holds it until the boomerang is actually in
+   * hand. A player who declined the grant through Slow build does not get
+   * offered a second boomerang shot in Confidence.
+   */
   boomerang_projectile: {
     title: "Multi-Track",
     description: "+1 Do Not Track Boomerang",
     effect: { kind: "weapon_projectile_add", weapon: "dnt_boomerang", count: 1 },
     maxStacks: 3,
+    unlockedFrom: "confidence",
   },
   move_speed: {
     title: "Bandwidth Boost",
