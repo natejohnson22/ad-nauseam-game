@@ -1,3 +1,5 @@
+import { startOf } from "../content/phases";
+import type { UpgradeEffect } from "../content/types";
 import type { Upgrade, UpgradeId } from "../content/upgrades";
 import type { WeaponId } from "../content/weapons";
 import type { GameBus } from "../core/event-bus";
@@ -18,6 +20,19 @@ export interface SpeedTarget {
   speedMult: number;
 }
 
+/**
+ * How far into the run it is — the fourth collaborator, added by issue #32 so a
+ * pick can be gated on a phase. `Run` satisfies it.
+ *
+ * A read of one number, not the `Run` class, for the same reason as its two
+ * neighbours here: the tests hand it `{ elapsed: 0 }` and nothing drags a canvas
+ * in. It is also the honest statement of the widening — `Progression` is now
+ * time-aware, and this interface is exactly how much time it may see.
+ */
+export interface RunClock {
+  readonly elapsed: number;
+}
+
 /** `weapon_manager.gd`'s upgrade hooks. `WeaponManager` satisfies it. */
 export interface UpgradeTarget {
   cooldownMult: number;
@@ -25,6 +40,10 @@ export interface UpgradeTarget {
   modCooldownMult(id: WeaponId, mult: number): void;
   modArc(id: WeaponId, degrees: number): void;
   modProjectiles(id: WeaponId, count: number): void;
+  /** Equips a weapon the run does not have — issue #32's `grant_weapon`. */
+  grantWeapon(id: WeaponId): void;
+  /** Whether the run is carrying it, which is what gates its upgrades. */
+  hasWeapon(id: WeaponId): boolean;
 }
 
 export class Progression {
@@ -42,6 +61,7 @@ export class Progression {
   constructor(
     private readonly player: SpeedTarget,
     private readonly weapons: UpgradeTarget,
+    private readonly clock: RunClock,
     private readonly pool: readonly Upgrade[],
     private readonly bus: Pick<GameBus, "emit">,
     /** Injected so `rollChoices` is deterministic under test. */
@@ -98,6 +118,9 @@ export class Progression {
       case "player_cooldown_mult":
         this.weapons.cooldownMult *= effect.amount;
         break;
+      case "grant_weapon":
+        this.weapons.grantWeapon(effect.weapon);
+        break;
     }
   }
 
@@ -106,12 +129,62 @@ export class Progression {
     this.xpNeeded = Math.round(this.xpNeeded * Progression.CURVE) + 1;
   }
 
-  /** Up to `n` distinct upgrades that are not already at their stack cap. */
+  /**
+   * Up to `n` distinct eligible upgrades — guaranteed ones first, in pool order,
+   * then the rest shuffled behind them (issue #32).
+   *
+   * The one filter this used to be (under its stack cap) is now three, and the
+   * ordering is no longer purely random. A guaranteed upgrade is only *featured*
+   * while it has never been taken: `maxStacks` decides whether it may be offered
+   * again at all, and `stacksOf` decides whether it still gets the free slot, so
+   * a hypothetical stackable guarantee would lead the roll exactly once rather
+   * than owning a slot for its whole life.
+   */
   private rollChoices(n: number): readonly Upgrade[] {
-    const available = this.pool.filter(
-      (u) => this.stacksOf(u.id) < u.data.maxStacks,
+    const eligible = this.pool.filter((u) => this.isEligible(u));
+    const featured = eligible.filter(
+      (u) => u.data.guaranteed === true && this.stacksOf(u.id) === 0,
     );
-    return this.shuffle(available).slice(0, n);
+    const rest = eligible.filter((u) => !featured.includes(u));
+    return [...featured, ...this.shuffle(rest)].slice(0, n);
+  }
+
+  /** Under its stack cap, past its phase gate, and holding the right weapons. */
+  private isEligible(upgrade: Upgrade): boolean {
+    const { maxStacks, unlockedFrom, effect } = upgrade.data;
+    if (this.stacksOf(upgrade.id) >= maxStacks) return false;
+    if (unlockedFrom !== undefined && this.clock.elapsed < startOf(unlockedFrom)) {
+      return false;
+    }
+    return this.weaponReady(effect);
+  }
+
+  /**
+   * The **inferred** gate (issue #32): an upgrade that modifies a weapon waits
+   * for the weapon, and a grant waits for its absence.
+   *
+   * Nothing declares this. `boomerang_damage.effect` already says
+   * `weapon: "dnt_boomerang"`, so a `requires: "grant_boomerang"` beside it
+   * would be the same fact written twice — the shape this codebase keeps
+   * deleting. Inferring it also means the upgrade-pool ticket can add weapons
+   * without remembering a rule.
+   *
+   * Before this existed, "Sharper Signal" could roll at level 2 and `modDamage`
+   * would shrug at an unequipped boomerang: a pick silently spent on nothing.
+   */
+  private weaponReady(effect: UpgradeEffect): boolean {
+    switch (effect.kind) {
+      case "grant_weapon":
+        return !this.weapons.hasWeapon(effect.weapon);
+      case "weapon_damage_add":
+      case "weapon_cooldown_mult":
+      case "weapon_arc_add":
+      case "weapon_projectile_add":
+        return this.weapons.hasWeapon(effect.weapon);
+      case "player_speed_mult":
+      case "player_cooldown_mult":
+        return true;
+    }
   }
 
   /** Fisher-Yates, in place on the caller's copy — Godot's `Array.shuffle()`. */

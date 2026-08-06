@@ -90,12 +90,20 @@ export class GameScene extends Phaser.Scene {
       this.swings,
       this.boomerangs,
     );
+    // The sword alone. The boomerang used to be equipped on this next line and
+    // is now a level-up pick gated to Slow build (issue #32), which is the whole
+    // of the PDF's "single weak melee weapon" opening — the sword's own numbers
+    // did not move, and losing half the opening's damage output *is* the nerf.
     this.weapons.addWeapon("adblock_sword", WEAPONS.adblock_sword);
-    this.weapons.addWeapon("dnt_boomerang", WEAPONS.dnt_boomerang);
 
     this.progression = new Progression(
       this.player,
       this.weapons,
+      // `Run` is the clock the phase gates read. The same one the director
+      // reads, so a gate and a spawn table can never disagree about the phase —
+      // and the playtest harness's seek, being a plain `run.tick(startAt)`,
+      // moves the gates with it for free.
+      this.run,
       UPGRADE_POOL,
       this.bus,
     );
