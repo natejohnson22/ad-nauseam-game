@@ -1,6 +1,27 @@
 import { ENEMIES, type EnemyId } from "../content/enemies";
 import { phaseAt, progressIn } from "../content/phases";
-import type { EnemyData, Ramp, SpawnTrack } from "../content/types";
+import type { EnemyData, Phase, Ramp, SpawnTrack } from "../content/types";
+
+/** One track's current rate, as the readout shows it (issue #30). */
+export interface TrackReadout {
+  readonly enemy: EnemyId;
+  readonly displayName: string;
+  /** Seconds between waves, at this instant on the ramp. */
+  readonly interval: number;
+  /** Enemies per wave, rounded as `spawnWave` rounds it. */
+  readonly wave: number;
+  /** Seconds until this track fires again. */
+  readonly nextIn: number;
+}
+
+/** What the director currently thinks it is doing — see `SpawnDirector.readout`. */
+export interface DirectorReadout {
+  readonly running: boolean;
+  readonly phase: Phase;
+  /** Where the run sits inside the phase, 0..1 — what every ramp lerps on. */
+  readonly progress: number;
+  readonly tracks: readonly TrackReadout[];
+}
 
 /**
  * Where a spawned enemy goes. The scene owns the pool, the player, and the
@@ -87,6 +108,34 @@ export class SpawnDirector {
       this.spawnWave(track, t);
       this.cooldowns.set(track.enemy, lerp(track.interval, t));
     }
+  }
+
+  /**
+   * The current rates, for the playtest harness's readout (issue #30).
+   *
+   * A method here rather than arithmetic in the harness: the readout's whole
+   * job is to be believed while a phase is being tuned, and a second copy of
+   * the phase lookup and the lerp would eventually disagree with the one that
+   * actually spawns things. This reads exactly what `tick` reads.
+   *
+   * `elapsed` is passed in for the same reason `tick` takes it — there is one
+   * clock in the game and it is not this object's.
+   */
+  readout(elapsed: number): DirectorReadout {
+    const phase = phaseAt(elapsed);
+    const t = progressIn(phase, elapsed);
+    return {
+      running: this.running,
+      phase,
+      progress: t,
+      tracks: phase.tracks.map((track) => ({
+        enemy: track.enemy,
+        displayName: ENEMIES[track.enemy].displayName,
+        interval: lerp(track.interval, t),
+        wave: Math.round(lerp(track.wave, t)),
+        nextIn: Math.max(0, this.cooldowns.get(track.enemy) ?? 0),
+      })),
+    };
   }
 
   private spawnWave(track: SpawnTrack, t: number): void {

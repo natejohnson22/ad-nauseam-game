@@ -24,6 +24,16 @@ export class Player extends Phaser.GameObjects.Sprite {
   hp = Player.MAX_HP;
   /** Mutated by the move-speed upgrade in slice 2. */
   speedMult = 1;
+  /**
+   * Damage is ignored while this is set.
+   *
+   * Set today only by the playtest harness (issue #30), which needs a phase's
+   * spawn pressure to be *watchable* — the Panic phase cannot be judged from
+   * the ad break. It is a plain field rather than a debug branch because it is
+   * not only a debug idea: i-frames are on the list of survivability upgrades
+   * the pool ticket has to design, and that is this same flag on a timer.
+   */
+  invulnerable = false;
 
   private alive = true;
   private readonly pip: Phaser.GameObjects.Sprite;
@@ -75,7 +85,7 @@ export class Player extends Phaser.GameObjects.Sprite {
   }
 
   takeDamage(amount: number): void {
-    if (!this.alive) return;
+    if (!this.alive || this.invulnerable) return;
     this.hp = Math.max(0, this.hp - amount);
     this.bus.emit("healthChanged", this.hp, Player.MAX_HP);
     if (this.hp <= 0) {

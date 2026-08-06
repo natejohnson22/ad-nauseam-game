@@ -153,6 +153,41 @@ describe("SpawnDirector", () => {
     expect(sink.count(GRUNT)).toBeGreaterThan(0);
   });
 
+  it("reports the rates it is actually spawning at", () => {
+    // The playtest readout (issue #30) is only worth having if it agrees with
+    // the spawner, so this asserts against the table rather than a snapshot.
+    const sink = new FakeSink();
+    const d = director(sink);
+    d.start();
+
+    // The open of Struggle: both tracks present, both at their `from` values.
+    d.tick(1 / 60, 600);
+    const view = d.readout(600);
+    expect(view.running).toBe(true);
+    expect(view.phase.id).toBe("struggle");
+    expect(view.progress).toBeCloseTo(0);
+    expect(view.tracks.map((t) => t.enemy)).toEqual([
+      "popup_grunt",
+      "autoplay_ogre",
+    ]);
+
+    const grunt = view.tracks[0]!;
+    expect(grunt.displayName).toBe(GRUNT);
+    expect(grunt.wave).toBe(sink.count(GRUNT));
+    expect(grunt.interval).toBeCloseTo(1.7);
+    // Fired on that tick, so the cooldown it reports is a full interval.
+    expect(grunt.nextIn).toBeCloseTo(1.7);
+  });
+
+  it("reports the ramp's far end at the close of a phase", () => {
+    const d = director(new FakeSink());
+    d.start();
+
+    const grunt = d.readout(899.99).tracks[0]!;
+    expect(grunt.interval).toBeCloseTo(1.45, 1);
+    expect(grunt.wave).toBe(6);
+  });
+
   it("places spawns on the ring around its origin", () => {
     const sink = new FakeSink();
     // `random` pinned to 0.25 -> a quarter turn: straight up from the origin.
