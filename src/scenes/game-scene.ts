@@ -5,6 +5,7 @@ import { WEAPONS } from "../content/weapons";
 import { Controls } from "../core/controls";
 import { EventBus, type GameBus } from "../core/event-bus";
 import { Pool } from "../core/pool";
+import { DevHarness } from "../dev/dev-harness";
 import { Boomerang } from "../entities/boomerang";
 import { DamageNumber } from "../entities/damage-number";
 import { Engagement } from "../entities/engagement";
@@ -52,6 +53,11 @@ export class GameScene extends Phaser.Scene {
   private levelUpModal!: LevelUpModal;
   private winScreen!: WinScreen;
   private adBreak!: AdBreak;
+  /**
+   * The playtest harness (issue #30) — `null` in a production build, where the
+   * branch that builds it is compiled away along with the module itself.
+   */
+  private dev: DevHarness | null = null;
 
   constructor() {
     super(GameScene.KEY);
@@ -125,12 +131,30 @@ export class GameScene extends Phaser.Scene {
     // there about why it seeds its own opening values.
     this.scene.launch(HudScene.KEY, { bus: this.bus, controls: this.controls });
     this.director.start();
+
+    /* Issue #30. `import.meta.env.DEV` is a literal after Vite's substitution,
+       so a production build drops this branch and, with it, the only import of
+       the harness — the same trick `main.ts` uses for its console handle. The
+       harness reaches the run through the four things named here and nothing
+       else; the seek it performs is an ordinary `run.tick`. */
+    if (import.meta.env.DEV) {
+      this.dev = DevHarness.attach(this, {
+        run: this.run,
+        director: this.director,
+        player: this.player,
+        liveEnemies: () => this.enemies.active().length,
+      });
+    }
   }
 
   override update(_time: number, delta: number): void {
     // Clamped: one frame with a multi-second delta — a resumed tab, or the
     // level-up modal below — would teleport every enemy onto the player.
-    const dt = Math.min(delta, 100) / 1000;
+    const frame = Math.min(delta, 100) / 1000;
+    // The harness scales the frame *after* the clamp, so its 4x is four times a
+    // normal frame rather than four times a stall. It is also where a seek
+    // lands — see `DevHarness.frame`. `null` in production: `dt` is `frame`.
+    const dt = this.dev?.frame(frame) ?? frame;
 
     this.run.tick(dt);
     this.player.tick(dt);
