@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { startOf } from "../content/phases";
+import { PHASES, RUN_LENGTH, expectedPool, startOf } from "../content/phases";
 import type { UpgradeData } from "../content/types";
 import type { Upgrade, UpgradeId } from "../content/upgrades";
 import { UPGRADE_POOL } from "../content/upgrades";
@@ -139,52 +139,154 @@ function roll(progression: Progression, bus: FakeBus): string[] {
   return bus.lastChoices().map((u) => u.id);
 }
 
-// -------------------------------------------------------------- the XP curve
+// --------------------------------------------------- the per-phase threshold
 
-describe("the XP curve", () => {
-  it("starts at 5 and compounds by round(x * 1.35) + 1", () => {
+/**
+ * Issue #35 retired the compounding `×1.35` curve for a per-phase threshold:
+ * `T = expectedPool(phase) / max`, so collecting a phase's whole expected pool
+ * crosses it exactly `max` times. These assert the crossing and the ceiling; the
+ * floor and the phase turnover that `tick` drives get their own suites below.
+ */
+describe("the per-phase threshold", () => {
+  it("scales the threshold to the opening phase's pool over its max", () => {
     const { progression } = build();
-    expect(progression.xpNeeded).toBe(Progression.FIRST_LEVEL_XP);
-
-    // 5 -> round(6.75) + 1 = 8 -> round(10.8) + 1 = 12 -> round(16.2) + 1 = 17
-    const thresholds = [5, 8, 12, 17];
-    for (const [index, needed] of thresholds.entries()) {
-      expect(progression.level).toBe(index + 1);
-      expect(progression.xpNeeded).toBe(needed);
-      progression.addEngagement(needed);
-    }
-    expect(progression.level).toBe(thresholds.length + 1);
+    const [, max] = PHASES[0]!.levelUps;
+    expect(progression.xpNeeded).toBe(expectedPool(PHASES[0]!) / max);
   });
 
-  it("carries the remainder into the next level rather than dropping it", () => {
-    const { progression } = build();
-    progression.addEngagement(7); // 5 to level, 2 left over
-    expect(progression.level).toBe(2);
-    expect(progression.xp).toBe(2);
-    expect(progression.xpNeeded).toBe(8);
-  });
-
-  it("levels twice off one pickup, and still offers exactly one modal", () => {
+  it("fires one pick each time collected XP crosses the threshold", () => {
     const { progression, bus } = build();
-    // 5 + 8 = 13 clears both thresholds; the `while` is what makes it two.
-    progression.addEngagement(14);
+    expect(progression.level).toBe(1);
 
-    expect(progression.level).toBe(3);
-    expect(progression.xp).toBe(1);
-    expect(progression.xpNeeded).toBe(12);
+    progression.addEngagement(progression.xpNeeded);
+    expect(progression.level).toBe(2);
     expect(bus.argsFor("leveledUp")).toHaveLength(1);
   });
 
-  it("emits xpChanged for a pickup that levels nobody up", () => {
-    const { progression, bus } = build();
-    progression.addEngagement(1);
+  it("carries the remainder toward the next pick rather than dropping it", () => {
+    const { progression } = build();
+    const threshold = progression.xpNeeded;
+    progression.addEngagement(threshold + 3);
+    expect(progression.level).toBe(2);
+    expect(progression.xp).toBe(3);
+  });
 
-    // One from the constructor, one from the pickup.
-    expect(bus.argsFor("xpChanged")).toEqual([
-      [0, 5, 1],
-      [1, 5, 1],
-    ]);
+  it("caps picks at the phase max, banking extra XP for nothing", () => {
+    // Quick Start budgets [3, 3]. A pickup dwarfing the whole pool yields
+    // exactly three picks — the ceiling — not one per threshold buried in it.
+    const { progression } = build();
+    const [, max] = PHASES[0]!.levelUps;
+    progression.addEngagement(expectedPool(PHASES[0]!) * 10);
+    expect(progression.level).toBe(1 + max);
+
+    const capped = progression.level;
+    progression.addEngagement(expectedPool(PHASES[0]!));
+    expect(progression.level).toBe(capped);
+  });
+});
+
+// ------------------------------------------------------------------ the floor
+
+/**
+ * The floor `tick` guarantees (issue #35): a player who collects little still
+ * gets a phase's `min` picks, forced by phase-progress `k/(min+1)` so they land
+ * spread across the phase — the last strictly inside it, before the boundary.
+ * The clock is driven by hand here; in the game `GameScene.update` ticks it
+ * every frame. No XP is collected in any of these, so the floor is the only
+ * thing granting picks.
+ */
+describe("the floor", () => {
+  // Quick Start is [3, 3]: milestones at 1/4, 2/4, 3/4 of its window.
+  const quarter = startOf("slow_build") / 4;
+
+  it("forces no pick before the first progress milestone", () => {
+    const { progression, bus, clock } = build();
+    clock.elapsed = quarter - 1;
+    progression.tick();
     expect(bus.argsFor("leveledUp")).toHaveLength(0);
+  });
+
+  it("forces the k-th pick at phase-progress k/(min+1), one at a time", () => {
+    const { progression, bus, clock } = build();
+
+    clock.elapsed = quarter;
+    progression.tick();
+    expect(bus.argsFor("leveledUp")).toHaveLength(1);
+
+    clock.elapsed = 2 * quarter;
+    progression.tick();
+    expect(bus.argsFor("leveledUp")).toHaveLength(2);
+  });
+
+  it("delivers a phase's whole minimum strictly before it closes", () => {
+    const { progression, bus, clock } = build();
+    // The third and last milestone is at 3/4 — inside the phase, not its edge.
+    clock.elapsed = 3 * quarter;
+    progression.tick();
+    expect(bus.argsFor("leveledUp")).toHaveLength(3);
+    expect(progression.level).toBe(4);
+  });
+});
+
+// -------------------------------------------------------------- phase turnover
+
+describe("phase turnover", () => {
+  it("re-scales the threshold and empties the bar on entering a phase", () => {
+    const { progression, clock } = build();
+    progression.addEngagement(progression.xpNeeded / 2); // Half a bar banked.
+    expect(progression.xp).toBeGreaterThan(0);
+
+    clock.elapsed = startOf("slow_build");
+    progression.tick();
+
+    const [, max] = PHASES[1]!.levelUps;
+    expect(progression.xpNeeded).toBe(expectedPool(PHASES[1]!) / max);
+    expect(progression.xp).toBe(0);
+  });
+
+  it("awards nothing for the phases a seek jumps clean over", () => {
+    // A harness seek lands the clock deep in a later phase with none of the
+    // in-phase ticks between. It is not a run that was played, so no floor picks
+    // are conjured for the skipped phases — the seek arrives at level 1, which
+    // is the "seek the build" gap the map already owns.
+    const { progression, clock } = build();
+    clock.elapsed = startOf("confidence"); // Skips Slow Build and its floor.
+    progression.tick();
+
+    expect(progression.level).toBe(1);
+    const [, max] = PHASES[2]!.levelUps;
+    expect(progression.xpNeeded).toBe(expectedPool(PHASES[2]!) / max);
+  });
+});
+
+// ----------------------------------------------------------- the last stand
+
+/**
+ * God-Tier is `[0, 0]` — the PDF's "no further upgrades" (issue #35). Drops
+ * still fall for the carnage, but the bar is pinned full and nothing, neither a
+ * pickup nor a progress milestone, opens a modal.
+ */
+describe("the last stand", () => {
+  const atGodTier = () => build(UPGRADE_POOL, inOrder, { elapsed: startOf("god_tier") });
+
+  it("takes no pick from any amount of collected XP", () => {
+    const { progression, bus } = atGodTier();
+    progression.addEngagement(1_000_000);
+    expect(progression.level).toBe(1);
+    expect(bus.argsFor("leveledUp")).toHaveLength(0);
+  });
+
+  it("forces no floor pick however far into the phase the clock runs", () => {
+    const { progression, bus, clock } = atGodTier();
+    clock.elapsed = RUN_LENGTH - 1;
+    progression.tick();
+    expect(bus.argsFor("leveledUp")).toHaveLength(0);
+    expect(progression.level).toBe(1);
+  });
+
+  it("pins the bar full", () => {
+    const { progression } = atGodTier();
+    expect(progression.xp).toBe(progression.xpNeeded);
   });
 });
 
@@ -206,12 +308,10 @@ describe("stack caps", () => {
     const open = entry("open", { maxStacks: 3 });
     const { progression, bus } = build([capped, open]);
 
-    progression.addEngagement(5);
-    expect(bus.lastChoices().map((u) => u.id)).toEqual(["capped", "open"]);
+    expect(roll(progression, bus)).toEqual(["capped", "open"]);
 
     progression.applyUpgrade(capped);
-    progression.addEngagement(8);
-    expect(bus.lastChoices().map((u) => u.id)).toEqual(["open"]);
+    expect(roll(progression, bus)).toEqual(["open"]);
   });
 
   /**
@@ -221,9 +321,12 @@ describe("stack caps", () => {
    * emptying is the only thing that ends the choosing.
    */
   it("takes every shipped upgrade to its cap and empties the pool", () => {
-    // The clock is parked past the last gate and both weapons are owned, so
-    // nothing is held back by #32's gates and the caps are the only ceiling.
-    const { progression, bus } = build(UPGRADE_POOL, inOrder, { elapsed: startOf("god_tier") });
+    // Parked past the last gate (Confidence) and both weapons owned, so nothing
+    // is held back by #32's gates and the caps are the only ceiling — but not in
+    // God-Tier, whose zero budget would empty the roll for the wrong reason.
+    const { progression, bus } = build(UPGRADE_POOL, inOrder, {
+      elapsed: startOf("pro_struggle"),
+    });
     expect(UPGRADE_POOL).toHaveLength(7);
 
     for (const upgrade of UPGRADE_POOL) {
@@ -233,8 +336,7 @@ describe("stack caps", () => {
       expect(progression.stacksOf(upgrade.id)).toBe(upgrade.data.maxStacks);
     }
 
-    progression.addEngagement(5);
-    expect(bus.lastChoices()).toEqual([]);
+    expect(roll(progression, bus)).toEqual([]);
   });
 
   it("offers nothing once every upgrade is capped", () => {
@@ -242,8 +344,7 @@ describe("stack caps", () => {
     const { progression, bus } = build([only]);
 
     progression.applyUpgrade(only);
-    progression.addEngagement(5);
-    expect(bus.lastChoices()).toEqual([]);
+    expect(roll(progression, bus)).toEqual([]);
   });
 });
 
@@ -254,8 +355,7 @@ describe("rolling three of the pool", () => {
     const pool = ["a", "b", "c", "d", "e"].map((id) => entry(id));
     const { progression, bus } = build(pool);
 
-    progression.addEngagement(5);
-    expect(bus.lastChoices()).toHaveLength(3);
+    expect(roll(progression, bus)).toHaveLength(3);
   });
 
   it("offers three distinct upgrades", () => {
@@ -264,8 +364,7 @@ describe("rolling three of the pool", () => {
     // pool's — a shuffle that duplicated instead of permuting would show here.
     const { progression, bus } = build(pool, () => 0);
 
-    progression.addEngagement(5);
-    const ids = bus.lastChoices().map((u) => u.id);
+    const ids = roll(progression, bus);
     expect(new Set(ids).size).toBe(3);
   });
 
@@ -273,15 +372,12 @@ describe("rolling three of the pool", () => {
     const pool = ["a", "b"].map((id) => entry(id));
     const { progression, bus } = build(pool);
 
-    progression.addEngagement(5);
-    expect(bus.lastChoices().map((u) => u.id)).toEqual(["a", "b"]);
+    expect(roll(progression, bus)).toEqual(["a", "b"]);
   });
 
   it("draws from the real pool", () => {
     const { progression, bus } = build();
-    progression.addEngagement(5);
-
-    const ids = bus.lastChoices().map((u) => u.id);
+    const ids = roll(progression, bus);
     expect(ids).toHaveLength(3);
     for (const id of ids) {
       expect(UPGRADE_POOL.map((u) => u.id)).toContain(id);
@@ -489,8 +585,11 @@ describe("guaranteed offers", () => {
   });
 
   it("never expires — declining it three times over still offers it a fourth", () => {
+    // Confidence, not Slow Build: its budget is [3, 4], so four picks fit inside
+    // one phase's ceiling and the guarantee's persistence is what is on trial
+    // here, not the budget. `sure` unlocked back in Slow Build, so it is live.
     const { progression, bus } = build([...rest, sure], inOrder, {
-      elapsed: startOf("slow_build"),
+      elapsed: startOf("confidence"),
     });
     for (let i = 0; i < 4; i++) {
       expect(roll(progression, bus)[0]).toBe("sure");

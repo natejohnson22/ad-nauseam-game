@@ -4,7 +4,6 @@ import type { GameBus } from "../core/event-bus";
 import { formatNumber } from "../core/format";
 import { rectTexture } from "../core/textures";
 import { Player } from "../entities/player";
-import { Progression } from "../systems/progression";
 import { Run } from "../systems/run";
 import { VirtualJoystick } from "../ui/virtual-joystick";
 
@@ -104,7 +103,11 @@ export class HudScene extends Phaser.Scene {
        `create` is always a step behind them. Godot has the same gap and lands on
        the same answer: `_build_ui` hardcodes "LVL 1" / "5:00" / "Kills: 0". */
     this.setBar(this.hpFill, HudScene.HP, Player.MAX_HP, Player.MAX_HP);
-    this.setBar(this.xpFill, HudScene.XP, 0, Progression.FIRST_LEVEL_XP);
+    /* Empty, and its scale a placeholder: the XP threshold is now the opening
+       phase's `pool / max` rather than a fixed constant (issue #35), and the
+       bar is at zero anyway, so the first pickup's `xpChanged` sets the real
+       scale before there is any fill to mis-draw. */
+    this.setBar(this.xpFill, HudScene.XP, 0, 1);
 
     this.bus.on("healthChanged", (current, maximum) => {
       this.setBar(this.hpFill, HudScene.HP, current, maximum);

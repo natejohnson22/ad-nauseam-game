@@ -178,6 +178,9 @@ export class GameScene extends Phaser.Scene {
     this.player.tick(dt);
     // After `run.tick`, so the director reads this frame's elapsed time.
     this.director.tick(dt, this.run.elapsed);
+    // Also after `run.tick`: the level-up budget's floor and its phase turnover
+    // read the same freshly-advanced clock (issue #35).
+    this.progression.tick();
     this.enemies.each((enemy) => enemy.tick(dt));
     // After the enemies that fire them, so a shot spawned this frame does not
     // also travel this frame — it would otherwise leave the muzzle already a
