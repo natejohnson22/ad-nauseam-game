@@ -1,3 +1,4 @@
+import { ENEMIES } from "./enemies";
 import type { Phase } from "./types";
 
 /**
@@ -171,6 +172,35 @@ export function phaseAt(elapsed: number): Phase {
  */
 export function startOf(id: PhaseId): number {
   return PHASES.find((phase) => phase.id === id)!.start;
+}
+
+/** The mean of a ramp — a track's average rate across its phase window. */
+const meanOf = (ramp: readonly [number, number]): number => (ramp[0] + ramp[1]) / 2;
+
+/**
+ * How much Engagement a phase is expected to drop — the divisor the level-up
+ * budget carves into `max` picks (issue #35).
+ *
+ * **Coarse on purpose.** Only the *uncapped* tracks are counted, each as
+ * `(duration / mean interval) waves × mean wave size × engagementValue`. A
+ * `max`-capped track is skipped: how many of it spawn over a phase depends on
+ * how fast the player kills it — a circularity, and a small slice of the pool
+ * besides, since the grunt swarm dwarfs the heavies by count. Events are skipped
+ * for the same reason. The budget's floor guarantees `min` regardless, and the
+ * threshold is `pool / max`, so an inexact pool only shifts how readily the
+ * *earned extra* lands — never whether the phase stays in budget. That is what
+ * lets this be a stretched-curve baseline the tuning passes react to rather than
+ * a number that must be right.
+ */
+export function expectedPool(phase: Phase): number {
+  const duration = phase.end - phase.start;
+  let pool = 0;
+  for (const track of phase.tracks) {
+    if (track.max !== undefined) continue;
+    const waves = duration / meanOf(track.interval);
+    pool += waves * meanOf(track.wave) * ENEMIES[track.enemy].engagementValue;
+  }
+  return pool;
 }
 
 /** Where `elapsed` sits inside `phase`, as 0..1 — what every ramp lerps on. */

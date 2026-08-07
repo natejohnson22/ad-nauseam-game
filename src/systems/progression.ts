@@ -1,5 +1,5 @@
-import { startOf } from "../content/phases";
-import type { UpgradeEffect } from "../content/types";
+import { expectedPool, phaseAt, progressIn, startOf } from "../content/phases";
+import type { Phase, UpgradeEffect } from "../content/types";
 import type { Upgrade, UpgradeId } from "../content/upgrades";
 import type { WeaponId } from "../content/weapons";
 import type { GameBus } from "../core/event-bus";
@@ -47,16 +47,25 @@ export interface UpgradeTarget {
 }
 
 export class Progression {
-  /** Engagement needed for level 2. */
-  static readonly FIRST_LEVEL_XP = 5;
-  private static readonly CURVE = 1.35;
   private static readonly CHOICES = 3;
+  /** The pinned-full bar of a no-upgrade phase — any value with `xp === needed`. */
+  private static readonly FULL_BAR = 1;
 
   level = 1;
   xp = 0;
-  xpNeeded = Progression.FIRST_LEVEL_XP;
+  /**
+   * Engagement to the next pick — the current phase's threshold `T = pool / max`
+   * (issue #35), not a compounding curve. `xpChanged` carries it so the HUD bar
+   * fills toward the next pick, and a no-upgrade phase pins it full.
+   */
+  xpNeeded = Progression.FULL_BAR;
 
   private readonly stacks = new Map<UpgradeId, number>();
+
+  /** The phase whose budget is currently in force — watched by `tick`. */
+  private phase!: Phase;
+  /** Picks taken since this phase opened, against its `[min, max]`. */
+  private picksThisPhase = 0;
 
   constructor(
     private readonly player: SpeedTarget,
@@ -67,24 +76,101 @@ export class Progression {
     /** Injected so `rollChoices` is deterministic under test. */
     private readonly random: () => number = Math.random,
   ) {
+    this.enterPhase(phaseAt(this.clock.elapsed));
+  }
+
+  /**
+   * The ceiling and floor of the current phase's budget — `[min, max]` from the
+   * table. A `max` of zero is the last stand's "no further upgrades".
+   */
+  private get budget(): readonly [min: number, max: number] {
+    return this.phase.levelUps;
+  }
+
+  /**
+   * Open a phase: recompute the threshold from its own drop pool, reset the bar,
+   * and start its pick count from zero (issue #35).
+   *
+   * `T = pool / max`, so collecting the whole expected pool crosses it exactly
+   * `max` times. A no-upgrade phase (`max === 0`) has no threshold — the bar is
+   * pinned full and no pickup or milestone ever fires a pick.
+   */
+  private enterPhase(phase: Phase): void {
+    this.phase = phase;
+    this.picksThisPhase = 0;
+    const max = this.budget[1];
+    if (max === 0) {
+      this.xp = Progression.FULL_BAR;
+      this.xpNeeded = Progression.FULL_BAR;
+    } else {
+      this.xp = 0;
+      this.xpNeeded = expectedPool(phase) / max;
+    }
     this.bus.emit("xpChanged", this.xp, this.xpNeeded, this.level);
   }
 
   /**
-   * Bank a pickup's value. The loop is a `while`, not an `if`: one late-run
-   * pickup can carry past two thresholds at once, and the player is owed both
-   * levels — but still only **one** modal, which is what `leveled` tracks.
+   * Bank a pickup's value toward the current phase's threshold (issue #35).
+   *
+   * Each `T` crossing is one pick, capped at the phase's `max` — a strong player
+   * who out-collects the expected pool lands at `max` and banks the rest for
+   * nothing, where the floor in `tick` catches a weak one at `min`. The `while`
+   * survives a pickup that carries past two thresholds, but still only one modal
+   * per pickup: the game is paused for it, so a second is unreachable anyway.
    */
   addEngagement(value: number): void {
-    this.xp += value;
+    const [, max] = this.budget;
     let leveled = false;
-    while (this.xp >= this.xpNeeded) {
-      this.xp -= this.xpNeeded;
-      this.levelUp();
-      leveled = true;
+    if (max > 0) {
+      this.xp += value;
+      while (this.picksThisPhase < max && this.xp >= this.xpNeeded) {
+        this.xp -= this.xpNeeded;
+        this.pickTaken();
+        leveled = true;
+      }
     }
     this.bus.emit("xpChanged", this.xp, this.xpNeeded, this.level);
     if (leveled) this.bus.emit("leveledUp", this.rollChoices(Progression.CHOICES));
+  }
+
+  /**
+   * Advance the budget clock (issue #35), called each frame from the game loop.
+   *
+   * **Phase turnover** re-scales the threshold when the clock crosses a
+   * boundary. **The floor** then tops a weak collector up: one who has not
+   * earned `min` picks by phase-progress `k/(min+1)` is handed the k-th anyway,
+   * so every phase delivers at least its budgeted minimum, spread across the
+   * phase rather than bunched at one edge.
+   *
+   * The milestones are `k/(min+1)`, not `k/min`, so the last of them lands at
+   * `min/(min+1)` — strictly *inside* the phase, before the boundary. That is
+   * what lets turnover be a plain re-scale with nothing owed to flush: by the
+   * time the clock reaches the boundary, the floor is already paid. It also
+   * keeps a *seek* honest — jumping the clock to a later phase awards none of
+   * the skipped phases' picks (a seek is not a run that was played), which is
+   * the level-1 seek the map's "seek the build" fog already owns, not a modal
+   * storm this ticket invents.
+   */
+  tick(): void {
+    const now = phaseAt(this.clock.elapsed);
+    if (now !== this.phase) this.enterPhase(now);
+
+    const [min, max] = this.budget;
+    if (max === 0) return;
+    const progress = progressIn(this.phase, this.clock.elapsed);
+    const due = Math.min(min, Math.floor(progress * (min + 1)));
+    while (this.picksThisPhase < due) {
+      this.xp = 0;
+      this.pickTaken();
+      this.bus.emit("xpChanged", this.xp, this.xpNeeded, this.level);
+      this.bus.emit("leveledUp", this.rollChoices(Progression.CHOICES));
+    }
+  }
+
+  /** One pick: level up and count it against the phase budget. */
+  private pickTaken(): void {
+    this.level += 1;
+    this.picksThisPhase += 1;
   }
 
   /** How many times `id` has been taken this run. */
@@ -122,11 +208,6 @@ export class Progression {
         this.weapons.grantWeapon(effect.weapon);
         break;
     }
-  }
-
-  private levelUp(): void {
-    this.level += 1;
-    this.xpNeeded = Math.round(this.xpNeeded * Progression.CURVE) + 1;
   }
 
   /**
