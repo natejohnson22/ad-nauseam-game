@@ -78,9 +78,10 @@ export const PHASES = [
     tracks: [
       { enemy: "popup_grunt", interval: [1.7, 1.45], wave: [5, 6] },
       { enemy: "tracking_pixel", interval: [6, 5], wave: [2, 2], max: 8 },
-      /* Advanced melee. Three overlapping slow fields is already most of the
-         arena's usable ground — this is the number likeliest to be wrong. */
-      { enemy: "cookie_banner", interval: [14, 11], wave: [1, 1], max: 3 },
+      /* Advanced melee. Two converging fields read as fair; three merge into a
+         wall you can't leave before the swarm lands (played, #39), so the cap
+         holds convergence to two here and climbs only gently after. */
+      { enemy: "cookie_banner", interval: [14, 11], wave: [1, 1], max: 2 },
     ],
   },
   {
@@ -92,7 +93,7 @@ export const PHASES = [
     tracks: [
       { enemy: "popup_grunt", interval: [1.45, 1.2], wave: [6, 7] },
       { enemy: "tracking_pixel", interval: [5, 4.5], wave: [2, 3], max: 10 },
-      { enemy: "cookie_banner", interval: [11, 9], wave: [1, 1], max: 4 },
+      { enemy: "cookie_banner", interval: [11, 9], wave: [1, 1], max: 3 },
       /* The mini-boss, and the phase's shock. `max: 1` is the whole of what
          makes it one — see the field's note in `types.ts`. */
       { enemy: "autoplay_ogre", interval: [22, 18], wave: [1, 1], max: 1 },
@@ -107,7 +108,7 @@ export const PHASES = [
     tracks: [
       { enemy: "popup_grunt", interval: [1.2, 0.95], wave: [7, 8] },
       { enemy: "tracking_pixel", interval: [4.5, 4], wave: [3, 3], max: 12 },
-      { enemy: "cookie_banner", interval: [9, 8], wave: [1, 2], max: 5 },
+      { enemy: "cookie_banner", interval: [9, 8], wave: [1, 2], max: 3 },
       { enemy: "autoplay_ogre", interval: [18, 15], wave: [1, 1], max: 1 },
       /* Advanced ranged, and the run's only threat that attacks the player's
          output rather than their health. Deliberately the rarest thing on the
@@ -125,7 +126,7 @@ export const PHASES = [
     tracks: [
       { enemy: "popup_grunt", interval: [0.95, 0.7], wave: [8, 9] },
       { enemy: "tracking_pixel", interval: [4, 3.5], wave: [3, 4], max: 14 },
-      { enemy: "cookie_banner", interval: [8, 7], wave: [2, 2], max: 6 },
+      { enemy: "cookie_banner", interval: [8, 7], wave: [2, 2], max: 4 },
       { enemy: "autoplay_ogre", interval: [15, 12], wave: [1, 1], max: 1 },
       { enemy: "paywall", interval: [20, 16], wave: [1, 1], max: 3 },
       /* The final boss. A track like any other, `max: 1`, and a long interval
