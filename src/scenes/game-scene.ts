@@ -179,6 +179,7 @@ export class GameScene extends Phaser.Scene {
         director: this.director,
         player: this.player,
         liveEnemies: () => this.enemies.active().length,
+        grantPicks: (n) => this.grantDevPicks(n),
       });
     }
   }
@@ -299,6 +300,55 @@ export class GameScene extends Phaser.Scene {
       this.levelUpModal.hide();
       this.bus.emit("inputEnabled", true);
       this.scene.resume();
+    });
+  }
+
+  /**
+   * Grant `n` level-ups back to back — the dev seek-the-build feature (issue
+   * #50), called by the harness once, right after a seek. A `?at=struggle` seek
+   * otherwise drops Nate at level 1 with the sword alone, which measures spawn
+   * pressure and not the difficulty of the ~8-pick build the phase is tuned
+   * around; these modals let him assemble that build by hand before playing.
+   *
+   * The picks are rolled one at a time in `showNextDevPick`, each after the
+   * previous is applied, so a weapon picked in one modal unlocks its upgrades
+   * and stops re-offering in the next — the same sequence a played run walks.
+   */
+  private pendingDevPicks = 0;
+
+  private grantDevPicks(n: number): void {
+    this.pendingDevPicks = n;
+    this.showNextDevPick();
+  }
+
+  /**
+   * Show the next queued dev pick, or resume once the queue drains. The scene
+   * is paused across the whole run of modals — only the last pick resumes it,
+   * exactly as a single `openLevelUp` does — so the seeked world stays frozen
+   * while Nate builds. An empty roll (the pool exhausted) ends the run early
+   * rather than showing an empty modal.
+   */
+  private showNextDevPick(): void {
+    if (this.pendingDevPicks <= 0 || this.run.isOver) return;
+    this.pendingDevPicks -= 1;
+
+    const choices = this.progression.grantPick();
+    if (choices.length === 0) {
+      this.pendingDevPicks = 0;
+      return;
+    }
+
+    this.scene.pause();
+    this.bus.emit("inputEnabled", false);
+    this.levelUpModal.show(choices, (upgrade) => {
+      this.progression.applyUpgrade(upgrade);
+      this.levelUpModal.hide();
+      if (this.pendingDevPicks > 0) {
+        this.showNextDevPick();
+      } else {
+        this.bus.emit("inputEnabled", true);
+        this.scene.resume();
+      }
     });
   }
 

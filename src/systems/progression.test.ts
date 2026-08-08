@@ -313,6 +313,44 @@ describe("the last stand", () => {
   });
 });
 
+// ----------------------------------------------- the seek-the-build grant
+
+/**
+ * Issue #50's dev grant. `grantPick` reconstructs the *skipped phases'* build a
+ * seek would otherwise miss, so it rolls and levels like a real pick but must
+ * not spend the seeked phase's own `[min, max]` — the phase still owes its
+ * budget once play starts.
+ */
+describe("the seek-the-build grant", () => {
+  it("levels up and returns a roll, like an earned pick", () => {
+    const { progression } = build();
+    const choices = progression.grantPick();
+    expect(choices).toHaveLength(3);
+    expect(progression.level).toBe(2);
+  });
+
+  it("respects the phase and weapon gates at the seeked time", () => {
+    // Slow build (t=180): the boomerang's grant is unlocked and, sword-only,
+    // eligible — so a guaranteed offer leads the roll, exactly as a played run.
+    const { progression } = build(UPGRADE_POOL, inOrder, { elapsed: 180 }, swordOnly());
+    expect(progression.grantPick()[0]?.id).toBe("grant_boomerang");
+  });
+
+  it("spends none of the seeked phase's budget", () => {
+    // Quick start's [3, 3]: three grants move the level, and the phase's own
+    // three earned picks still fire afterward — grantPick consumed no budget.
+    const { progression, bus } = build();
+    progression.grantPick();
+    progression.grantPick();
+    progression.grantPick();
+    expect(progression.level).toBe(4);
+
+    for (let i = 0; i < 5; i++) progression.addEngagement(progression.xpNeeded);
+    expect(bus.argsFor("leveledUp")).toHaveLength(3);
+    expect(progression.level).toBe(7);
+  });
+});
+
 // ------------------------------------------------------------- stack caps
 
 describe("stack caps", () => {

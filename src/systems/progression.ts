@@ -184,6 +184,26 @@ export class Progression {
     }
   }
 
+  /**
+   * Force one pick and hand back its choices — the dev seek-the-build grant
+   * (issue #50), driven by the harness, never by the game loop.
+   *
+   * It bumps the level and rolls exactly as a real pick does, so `isEligible`'s
+   * phase and weapon gates apply and the choices are honest for the seeked
+   * time. It deliberately does **not** call `pickTaken`: these picks
+   * reconstruct the *skipped phases'* build, so they must not spend the seeked
+   * phase's own `[min, max]` budget — Struggle still owes its 2-3 during play.
+   * Public and shipping for the same reason `SpawnDirector.readout` is: a
+   * dev-serving surface that is inert until the harness reaches for it.
+   */
+  grantPick(): readonly Upgrade[] {
+    this.level += 1;
+    // So the HUD's level counter reflects the granted build rather than lying
+    // at 1 — the readout is a tuning tool, and a wrong level is a wrong reading.
+    this.bus.emit("xpChanged", this.xp, this.xpNeeded, this.level);
+    return this.rollChoices(Progression.CHOICES);
+  }
+
   /** One pick: level up and count it against the phase budget. */
   private pickTaken(): void {
     this.level += 1;

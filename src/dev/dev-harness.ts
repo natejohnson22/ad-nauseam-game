@@ -141,6 +141,10 @@ export class DevHarness {
     if (this.pendingSeek > 0) {
       this.targets.run.tick(this.pendingSeek);
       this.pendingSeek = 0;
+      // After the seek, never before: the picks' phase and weapon gates read
+      // the seeked clock, so a Struggle grant offers the boomerang and
+      // spin-melee it has unlocked and withholds the orbital it has not (#50).
+      if (this.config.picks > 0) this.targets.grantPicks(this.config.picks);
     }
 
     this.redrawIn -= delta;
@@ -220,7 +224,7 @@ export class DevHarness {
     if (this.config.problems.length > 0)
       lines.push(...this.config.problems.map((p) => `!!    ${p}`));
     else if (!isConfigured(this.config))
-      lines.push(`url   ?at=${view.phase.id}&speed=4&invuln`);
+      lines.push(`url   ?at=${view.phase.id}&speed=4&invuln&picks=8`);
 
     this.panel.textContent = lines.join("\n");
   }
@@ -241,6 +245,12 @@ export interface HarnessTargets {
   readonly player: Player;
   /** The pool's live count — the harness never holds the pool itself. */
   readonly liveEnemies: () => number;
+  /**
+   * Open `n` level-up modals back to back, for the seek-the-build grant (issue
+   * #50). The harness rolls nothing itself — this hands the request to the
+   * scene, which owns the modal and the progression that fills it.
+   */
+  readonly grantPicks: (n: number) => void;
 }
 
 type Binding = "slower" | "faster" | "invuln" | "panel";
