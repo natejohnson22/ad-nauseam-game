@@ -3,6 +3,7 @@ import type { EnemyBehavior } from "../content/types";
 import type { Upgrade } from "../content/upgrades";
 import { UPGRADE_POOL } from "../content/upgrades";
 import { WEAPONS } from "../content/weapons";
+import { ENEMIES } from "../content/enemies";
 import { Controls } from "../core/controls";
 import { EventBus, type GameBus } from "../core/event-bus";
 import { Pool } from "../core/pool";
@@ -136,7 +137,7 @@ export class GameScene extends Phaser.Scene {
     this.adBreak = new AdBreak(this.overlay);
 
     this.bus.on("leveledUp", (choices) => this.openLevelUp(choices));
-    this.bus.on("playerDied", () => this.run.end("lost"));
+    this.bus.on("playerDied", () => this.run.end("died"));
     this.bus.on("runEnded", (outcome) => this.endRun(outcome));
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -246,6 +247,12 @@ export class GameScene extends Phaser.Scene {
         this.player,
         this,
       );
+    // Killing The Algorithm is the win (issue #37). Identity is archetype
+    // identity here — the same reference check `liveCount` makes — so the boss
+    // needs no id or flag carried around. The dropped engagement above is
+    // deliberately still spawned: the tally is banked before the run latches
+    // over, and it does no harm on the frame the world stops.
+    if (enemy.archetype === ENEMIES.the_algorithm) this.run.defeatBoss();
   }
 
   onEngagementCollected(value: number): void {
@@ -292,8 +299,11 @@ export class GameScene extends Phaser.Scene {
     this.bus.emit("inputEnabled", false);
 
     const restart = (): void => this.restart();
+    // Two losses, two sets of copy (issue #37): the ad break reads the outcome
+    // to tell "you died" from "the boss outlasted you." The win screen is now
+    // an actual victory — you killed the thing.
     if (outcome === "won") this.winScreen.show(this.run.stats, restart);
-    else this.adBreak.show(this.run.stats, restart);
+    else this.adBreak.show(outcome, this.run.stats, restart);
   }
 
   /**

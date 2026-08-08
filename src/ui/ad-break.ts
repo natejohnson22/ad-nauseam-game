@@ -1,6 +1,9 @@
 import { formatNumber } from "../core/format";
-import type { RunStats } from "../systems/run";
+import type { RunOutcome, RunStats } from "../systems/run";
 import type { Overlay } from "./overlay";
+
+/** The two losses that land here — `won` gets the victory screen instead. */
+type LossOutcome = Exclude<RunOutcome, "won">;
 
 /**
  * The placeholder ad-break on death — the port of `main.gd`'s `_show_ad_break`.
@@ -28,25 +31,45 @@ export class AdBreak {
     "Thank you for your engagement. It was delicious.",
   ] as const;
 
+  /**
+   * Timeout — the run you nearly finished (issue #37). You outlasted the swarm
+   * but The Algorithm outlasted you, so it keeps serving. Distinct copy from
+   * death: the joke is the deadline missed, not the body count.
+   */
+  private static readonly TIMEOUT_FLAVOR = [
+    "The Algorithm outlasted you. The ad never ends.",
+    "So close. Enjoy the rest of the ads. All of them.",
+    "Time's up. Engagement continues without your consent.",
+    "You ran out of clock. The Algorithm has all the time in the world.",
+  ] as const;
+
+  /** Title and flavour pool per loss — the only thing the two endings differ on. */
+  private static readonly COPY: Record<
+    LossOutcome,
+    { title: string; flavor: readonly string[] }
+  > = {
+    died: { title: "GAME OVER", flavor: AdBreak.DEATH_FLAVOR },
+    timeout: { title: "TIME'S UP", flavor: AdBreak.TIMEOUT_FLAVOR },
+  };
+
   private element: HTMLElement | null = null;
   private ticker: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly overlay: Overlay) {}
 
-  show(stats: RunStats, onSkip: () => void): void {
+  show(outcome: LossOutcome, stats: RunStats, onSkip: () => void): void {
     this.hide();
+    const copy = AdBreak.COPY[outcome];
 
     const modal = document.createElement("div");
     modal.className = "modal ad-break";
 
     const title = document.createElement("h1");
-    title.textContent = "GAME OVER";
+    title.textContent = copy.title;
 
     const flavor = document.createElement("p");
     flavor.textContent =
-      AdBreak.DEATH_FLAVOR[
-        Math.floor(Math.random() * AdBreak.DEATH_FLAVOR.length)
-      ] ?? "";
+      copy.flavor[Math.floor(Math.random() * copy.flavor.length)] ?? "";
 
     /* Death is the ending most runs get, so it is where the tally is most
        worth showing (issue #25). Below the flavour line and above the ad, so
