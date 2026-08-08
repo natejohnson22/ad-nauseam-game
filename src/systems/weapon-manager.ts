@@ -1,10 +1,11 @@
 import Phaser from "phaser";
-import type { Mutable, WeaponData } from "../content/types";
+import type { Mutable, OrbitalWeaponData, WeaponData } from "../content/types";
 import { WEAPONS, type WeaponId } from "../content/weapons";
 import type { Controls } from "../core/controls";
 import type { Pool } from "../core/pool";
 import type { Boomerang } from "../entities/boomerang";
 import type { Enemy } from "../entities/enemy";
+import type { Orbiter } from "../entities/orbiter";
 import type { Player } from "../entities/player";
 import type { SwordSwing } from "../entities/sword-swing";
 
@@ -13,8 +14,18 @@ import type { SwordSwing } from "../entities/sword-swing";
  * mutate this run's numbers and never the content module. `id` is carried
  * alongside rather than inside, because ids are record keys now (issue #3) —
  * and the `mod_*` upgrade hooks are what look weapons up by it.
+ *
+ * `orbs`/`phase` exist only on an orbital weapon (issue #44), which is ticked
+ * outside the cooldown-and-fire loop: `orbs` are the live revolving sprites,
+ * `phase` the shared angle they are spread around.
  */
-type RunWeapon = { id: WeaponId; data: Mutable<WeaponData>; cd: number };
+type RunWeapon = {
+  id: WeaponId;
+  data: Mutable<WeaponData>;
+  cd: number;
+  orbs?: Orbiter[];
+  phase?: number;
+};
 
 /**
  * Holds the equipped weapons, ticks their cooldowns, and auto-fires each at the
@@ -40,11 +51,19 @@ export class WeaponManager {
     private readonly enemies: Pool<Enemy>,
     private readonly swings: Pool<SwordSwing>,
     private readonly boomerangs: Pool<Boomerang>,
+    private readonly orbiters: Pool<Orbiter>,
   ) {}
 
   addWeapon(id: WeaponId, data: WeaponData): void {
-    // 0.15s so the first swing lands almost immediately, as in Godot.
-    this.weapons.push({ id, data: { ...data }, cd: 0.15 });
+    // 0.15s so the first swing lands almost immediately, as in Godot. An orbital
+    // has no fire to hasten, but it also starts revolving its first frame, so its
+    // orbs appear just as promptly (issue #44).
+    const weapon: RunWeapon = { id, data: { ...data }, cd: 0.15 };
+    if (weapon.data.kind === "orbital") {
+      weapon.orbs = [];
+      weapon.phase = 0;
+    }
+    this.weapons.push(weapon);
   }
 
   /**
@@ -77,7 +96,45 @@ export class WeaponManager {
 
   modDamage(id: WeaponId, amount: number): void {
     const weapon = this.find(id);
-    if (weapon !== undefined) weapon.data.baseDamage += amount;
+    if (weapon === undefined) return;
+    weapon.data.baseDamage += amount;
+    // Fired weapons re-read `baseDamage` on their next spawn, but an orbital's
+    // orbs are long-lived and cached theirs — push the new figure to the live
+    // ring so the upgrade lands this frame, not on a throw that never comes.
+    if (weapon.orbs !== undefined) {
+      for (const orb of weapon.orbs) orb.setDamage(weapon.data.baseDamage);
+    }
+  }
+
+  /** Widen a melee weapon's cleave — the spin-melee's signature (issue #44). */
+  modReach(id: WeaponId, amount: number): void {
+    const weapon = this.find(id);
+    if (weapon === undefined) return;
+    switch (weapon.data.kind) {
+      case "melee":
+        weapon.data.reach += amount;
+        break;
+      // Nothing else has a reach to widen; the union names the cases so the
+      // compiler proves it, as with `modArc` below.
+      case "ranged":
+      case "orbital":
+        break;
+    }
+  }
+
+  /** Add an orb to an orbital's ring — the Firewall's signature (issue #44). */
+  modOrbiters(id: WeaponId, count: number): void {
+    const weapon = this.find(id);
+    if (weapon === undefined) return;
+    switch (weapon.data.kind) {
+      case "orbital":
+        weapon.data.orbiterCount += count;
+        // The ring is re-synced to the new count on the next tick.
+        break;
+      case "melee":
+      case "ranged":
+        break;
+    }
   }
 
   modCooldownMult(id: WeaponId, mult: number): void {
@@ -96,6 +153,8 @@ export class WeaponManager {
       // regardless, onto a field the boomerang carries and never reads; the
       // union is what turns that into a case that must be stated.
       case "ranged":
+      // An orbital has no arc either — it is a ring, not a wedge.
+      case "orbital":
         break;
     }
   }
@@ -105,6 +164,7 @@ export class WeaponManager {
     if (weapon === undefined) return;
     switch (weapon.data.kind) {
       case "melee":
+      case "orbital":
         break;
       case "ranged":
         weapon.data.projectileCount += count;
@@ -125,11 +185,48 @@ export class WeaponManager {
     if (this.player.silenced) return;
 
     for (const weapon of this.weapons) {
+      // An orbital has no cooldown to run and nothing to aim: it revolves every
+      // frame instead of firing (issue #44), so it steps out of the loop here.
+      if (weapon.data.kind === "orbital") {
+        this.tickOrbital(weapon, weapon.data, delta);
+        continue;
+      }
       weapon.cd -= delta;
       if (weapon.cd <= 0) {
         this.fire(weapon.data);
         weapon.cd = Math.max(0.05, weapon.data.cooldown * this.cooldownMult);
       }
+    }
+  }
+
+  /**
+   * Advance one orbital: keep its ring at `orbiterCount` orbs, spin the shared
+   * phase, and lay the orbs evenly around the player so `+1 orbiter` re-spreads
+   * the whole ring rather than bunching the newcomer (issue #44).
+   */
+  private tickOrbital(
+    weapon: RunWeapon,
+    data: Mutable<OrbitalWeaponData>,
+    delta: number,
+  ): void {
+    const orbs = weapon.orbs ?? (weapon.orbs = []);
+
+    while (orbs.length < data.orbiterCount) {
+      const orb = this.orbiters.obtain();
+      orb.spawn(data, this.enemies);
+      orbs.push(orb);
+    }
+    while (orbs.length > data.orbiterCount) orbs.pop()?.release();
+
+    weapon.phase = (weapon.phase ?? 0) + data.angularSpeed * delta;
+    const step = (Math.PI * 2) / orbs.length;
+    for (let i = 0; i < orbs.length; i++) {
+      const a = weapon.phase + i * step;
+      orbs[i]!.place(
+        this.player.x + Math.cos(a) * data.orbitRadius,
+        this.player.y + Math.sin(a) * data.orbitRadius,
+        delta,
+      );
     }
   }
 
@@ -155,6 +252,10 @@ export class WeaponManager {
         }
         break;
       }
+      // An orbital never reaches here — `tick` diverts it before the fire path —
+      // but the union makes the case explicit rather than a silent fallthrough.
+      case "orbital":
+        break;
     }
   }
 

@@ -5,9 +5,9 @@ import type { Upgrade, UpgradeId } from "../content/upgrades";
 import { UPGRADE_POOL } from "../content/upgrades";
 import type { WeaponId } from "../content/weapons";
 import {
+  type PlayerTarget,
   Progression,
   type RunClock,
-  type SpeedTarget,
   type UpgradeTarget,
 } from "./progression";
 
@@ -69,6 +69,12 @@ class FakeWeapons implements UpgradeTarget {
   modProjectiles(id: string, count: number): void {
     this.calls.push(["modProjectiles", id, count]);
   }
+  modReach(id: string, amount: number): void {
+    this.calls.push(["modReach", id, amount]);
+  }
+  modOrbiters(id: string, count: number): void {
+    this.calls.push(["modOrbiters", id, count]);
+  }
   grantWeapon(id: WeaponId): void {
     this.owned.add(id);
     this.calls.push(["grantWeapon", id]);
@@ -81,7 +87,24 @@ class FakeWeapons implements UpgradeTarget {
 /** A run that has only ever held the starting sword — the real 0:00 state. */
 const swordOnly = (): FakeWeapons => new FakeWeapons(new Set<WeaponId>(["adblock_sword"]));
 
-const player = (): SpeedTarget => ({ speedMult: 1 });
+/**
+ * The player fake, which records the survivability effects it receives
+ * (issue #43): `raiseMaxHp` is a method, so a plain field can't capture its
+ * calls the way `speedMult` and `damageTakenMult` capture theirs by value.
+ */
+interface FakePlayer extends PlayerTarget {
+  readonly maxHpRaises: number[];
+}
+
+const player = (): FakePlayer => ({
+  speedMult: 1,
+  regenPerSecond: 0,
+  damageTakenMult: 1,
+  maxHpRaises: [],
+  raiseMaxHp(amount: number): void {
+    this.maxHpRaises.push(amount);
+  },
+});
 
 /** A pool entry with an arbitrary id, so tests can build pools by shape. */
 function entry(id: string, data: Partial<UpgradeData> = {}): Upgrade {
@@ -119,7 +142,7 @@ function build(
   progression: Progression;
   bus: FakeBus;
   weapons: FakeWeapons;
-  hero: SpeedTarget;
+  hero: FakePlayer;
   clock: { elapsed: number };
 } {
   const bus = new FakeBus();
@@ -327,7 +350,7 @@ describe("stack caps", () => {
     const { progression, bus } = build(UPGRADE_POOL, inOrder, {
       elapsed: startOf("pro_struggle"),
     });
-    expect(UPGRADE_POOL).toHaveLength(7);
+    expect(UPGRADE_POOL).toHaveLength(19);
 
     for (const upgrade of UPGRADE_POOL) {
       for (let i = 0; i < upgrade.data.maxStacks; i++) {
@@ -466,9 +489,62 @@ describe("upgrade-effect dispatch", () => {
       ["grantWeapon", "dnt_boomerang"],
       ["modDamage", "dnt_boomerang", 50],
       ["modProjectiles", "dnt_boomerang", 1],
+      // The three new weapons (issue #44), each grant + damage + signature.
+      ["grantWeapon", "popup_blocker"],
+      ["modDamage", "popup_blocker", 50],
+      ["modProjectiles", "popup_blocker", 1],
+      ["grantWeapon", "spam_filter"],
+      ["modDamage", "spam_filter", 55],
+      ["modReach", "spam_filter", 22],
+      ["grantWeapon", "firewall"],
+      ["modDamage", "firewall", 40],
+      ["modOrbiters", "firewall", 1],
     ]);
     expect(hero.speedMult).toBeCloseTo(1.12, 10);
     expect(weapons.cooldownMult).toBeCloseTo(0.9, 10);
+    // The survivability axis, one stack of each (issue #43).
+    expect(hero.maxHpRaises).toEqual([150]);
+    expect(hero.regenPerSecond).toBe(20);
+    expect(hero.damageTakenMult).toBeCloseTo(0.88, 10);
+  });
+
+  it("raises max HP through the player, once per stack", () => {
+    const { progression, hero } = build();
+    const maxHp = entry("max_hp", {
+      effect: { kind: "player_max_hp_add", amount: 150 },
+      maxStacks: 4,
+    });
+
+    progression.applyUpgrade(maxHp);
+    progression.applyUpgrade(maxHp);
+    // Each pick is one raise the player heals into — the fake records the calls
+    // rather than the sum, because the heal-on-gain pairing lives on the player.
+    expect(hero.maxHpRaises).toEqual([150, 150]);
+  });
+
+  it("sums regen rather than multiplying it", () => {
+    const { progression, hero } = build();
+    const regen = entry("regen", {
+      effect: { kind: "player_regen_add", amount: 20 },
+      maxStacks: 3,
+    });
+
+    progression.applyUpgrade(regen);
+    progression.applyUpgrade(regen);
+    expect(hero.regenPerSecond).toBe(40);
+  });
+
+  it("compounds damage reduction so it never reaches immunity", () => {
+    const { progression, hero } = build();
+    const dr = entry("damage_reduction", {
+      effect: { kind: "player_damage_reduction_mult", amount: 0.88 },
+      maxStacks: 4,
+    });
+
+    // Four stacks — the shipped cap — still leaves a ~60% multiplier, never zero.
+    for (let i = 0; i < 4; i++) progression.applyUpgrade(dr);
+    expect(hero.damageTakenMult).toBeCloseTo(0.88 ** 4, 10);
+    expect(hero.damageTakenMult).toBeGreaterThan(0);
   });
 });
 

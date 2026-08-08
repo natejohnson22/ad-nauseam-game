@@ -15,9 +15,23 @@ import type { GameBus } from "../core/event-bus";
  * four weapon hooks.
  */
 
-/** What the speed upgrade needs from the player. `Player` satisfies it. */
-export interface SpeedTarget {
+/**
+ * What the player-facing upgrades need from the player. `Player` satisfies it.
+ *
+ * Was `speedMult` alone; issue #43's survivability axis widened it by three —
+ * still just mutable numbers and one method, so a test hands it a plain object
+ * and nothing drags a canvas in. `raiseMaxHp` is a method rather than a field
+ * because a Max HP pick heals as well as raises the ceiling, and that pairing
+ * belongs to the player, not to the caller applying the effect.
+ */
+export interface PlayerTarget {
   speedMult: number;
+  /** Summed by the Regen upgrade; consumed per-frame in `Player.tick`. */
+  regenPerSecond: number;
+  /** Multiplied by the Damage Reduction upgrade; applied at `Player.takeDamage`. */
+  damageTakenMult: number;
+  /** Raise the HP ceiling and heal by the same amount — the Max HP upgrade. */
+  raiseMaxHp(amount: number): void;
 }
 
 /**
@@ -40,6 +54,9 @@ export interface UpgradeTarget {
   modCooldownMult(id: WeaponId, mult: number): void;
   modArc(id: WeaponId, degrees: number): void;
   modProjectiles(id: WeaponId, count: number): void;
+  /** The two new weapons' signature lines — issue #44. */
+  modReach(id: WeaponId, amount: number): void;
+  modOrbiters(id: WeaponId, count: number): void;
   /** Equips a weapon the run does not have — issue #32's `grant_weapon`. */
   grantWeapon(id: WeaponId): void;
   /** Whether the run is carrying it, which is what gates its upgrades. */
@@ -68,7 +85,7 @@ export class Progression {
   private picksThisPhase = 0;
 
   constructor(
-    private readonly player: SpeedTarget,
+    private readonly player: PlayerTarget,
     private readonly weapons: UpgradeTarget,
     private readonly clock: RunClock,
     private readonly pool: readonly Upgrade[],
@@ -198,11 +215,26 @@ export class Progression {
       case "weapon_projectile_add":
         this.weapons.modProjectiles(effect.weapon, effect.count);
         break;
+      case "weapon_reach_add":
+        this.weapons.modReach(effect.weapon, effect.amount);
+        break;
+      case "weapon_orbiter_add":
+        this.weapons.modOrbiters(effect.weapon, effect.count);
+        break;
       case "player_speed_mult":
         this.player.speedMult *= effect.amount;
         break;
       case "player_cooldown_mult":
         this.weapons.cooldownMult *= effect.amount;
+        break;
+      case "player_max_hp_add":
+        this.player.raiseMaxHp(effect.amount);
+        break;
+      case "player_regen_add":
+        this.player.regenPerSecond += effect.amount;
+        break;
+      case "player_damage_reduction_mult":
+        this.player.damageTakenMult *= effect.amount;
         break;
       case "grant_weapon":
         this.weapons.grantWeapon(effect.weapon);
@@ -261,9 +293,15 @@ export class Progression {
       case "weapon_cooldown_mult":
       case "weapon_arc_add":
       case "weapon_projectile_add":
+      case "weapon_reach_add":
+      case "weapon_orbiter_add":
         return this.weapons.hasWeapon(effect.weapon);
       case "player_speed_mult":
       case "player_cooldown_mult":
+      case "player_max_hp_add":
+      case "player_regen_add":
+      case "player_damage_reduction_mult":
+        // Survivability upgrades hold no weapon (issue #43): always ready.
         return true;
     }
   }

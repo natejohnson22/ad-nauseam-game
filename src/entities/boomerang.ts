@@ -7,9 +7,13 @@ import type { Enemy } from "./enemy";
 import type { Player } from "./player";
 
 /**
- * The Do Not Track Boomerang — the port of `boomerang.gd`. Flies out to
- * `travelDistance`, turns around, homes back to the player and vanishes when
- * caught, damaging enemies on both passes.
+ * The `ranged` kind's projectile — the port of `boomerang.gd`, now the entity
+ * behind both ranged weapons (issue #44). With `returns: true` it is the Do Not
+ * Track Boomerang: flies out to `travelDistance`, turns around, homes back to the
+ * player and vanishes when caught. With `returns: false` it is the pierce-ranged
+ * Popup Blocker: the same straight flight, but it expires at `travelDistance`
+ * instead of arcing back. Either way it damages every enemy along its path (the
+ * per-enemy hit cooldown, not a pierce cap, is what stops it shredding one).
  *
  * Its geometry never changes, so unlike the sword it is one baked texture for
  * the whole run whatever the upgrades do (issue #4): the multi-track upgrade
@@ -34,6 +38,8 @@ export class Boomerang extends PooledSprite {
   private knockback = 0;
   private distOut = 0;
   private returning = false;
+  /** Whether this throw arcs home (boomerang) or expires at range (pierce). */
+  private returns = true;
 
   private readonly dir = new Phaser.Math.Vector2(1, 0);
   private readonly hitCd = new Map<number, number>();
@@ -70,6 +76,7 @@ export class Boomerang extends PooledSprite {
     this.travel = data.travelDistance;
     this.damage = data.baseDamage;
     this.knockback = data.knockback;
+    this.returns = data.returns;
     this.player = player;
     this.enemies = enemies;
 
@@ -113,7 +120,14 @@ export class Boomerang extends PooledSprite {
       this.x += this.dir.x * step;
       this.y += this.dir.y * step;
       this.distOut += step;
-      if (this.distOut >= this.travel) this.returning = true;
+      if (this.distOut >= this.travel) {
+        // A pierce shot's line ends at max range; only a boomerang turns around.
+        if (!this.returns) {
+          this.release();
+          return false;
+        }
+        this.returning = true;
+      }
       return true;
     }
 

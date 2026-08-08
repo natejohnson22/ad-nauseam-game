@@ -164,13 +164,51 @@ export interface MeleeWeaponData extends WeaponBase {
 export interface RangedWeaponData extends WeaponBase {
   readonly kind: "ranged";
   readonly projectileSpeed: number;
-  /** How far a shot flies before it turns around. */
+  /** How far a shot flies before it turns around (or expires — see `returns`). */
   readonly travelDistance: number;
   /** Shots per fire, fanned 16deg apart. Raised by the multi-track upgrade. */
   readonly projectileCount: number;
+  /**
+   * The `ranged` kind's two flavours on one entity (issue #44).
+   *
+   * `true` is the Do Not Track Boomerang: fly out to `travelDistance`, turn
+   * around, home back to the player, damaging on both passes. `false` is the
+   * pierce-ranged weapon the upgrade pool (#36) adds — the same projectile fired
+   * in a **straight committed line** that expires at `travelDistance` rather than
+   * returning. Both already tag every enemy along their path (the entity has no
+   * pierce limit), so the difference is the *shape of the flight*, not a
+   * per-shot hit cap — which is what keeps this one boolean and not new firing
+   * code. Distinct from the boomerang's return arc, per the ticket.
+   */
+  readonly returns: boolean;
 }
 
-export type WeaponData = MeleeWeaponData | RangedWeaponData;
+/**
+ * A weapon that circles the player rather than firing at a target — the genre's
+ * garlic / holy-book (issue #36), the pool's one brand-new `kind` (#44).
+ *
+ * It breaks the cooldown-and-aim model every other weapon shares: there is
+ * nothing to aim and nothing to time, so `WeaponManager` special-cases it out of
+ * the fire loop and instead keeps `orbiterCount` orbs revolving around the
+ * player, each dealing contact damage on its own re-hit cooldown. `cooldown`
+ * from `WeaponBase` is therefore carried but unread; `knockback` still lands on
+ * every hit.
+ */
+export interface OrbitalWeaponData extends WeaponBase {
+  readonly kind: "orbital";
+  /** How far the orbs ride from the player's centre. */
+  readonly orbitRadius: number;
+  /** Revolutions expressed as radians/sec of the shared phase. */
+  readonly angularSpeed: number;
+  /** Orbs in the ring, spread evenly. Raised by the `+1 orbiter` upgrade. */
+  readonly orbiterCount: number;
+  /** Body size of one orb — its placeholder circle and its contact reach. */
+  readonly orbiterRadius: number;
+  /** Seconds before a given enemy may be hit again by the same orb. */
+  readonly hitInterval: number;
+}
+
+export type WeaponData = MeleeWeaponData | RangedWeaponData | OrbitalWeaponData;
 
 // ----------------------------------------------------------------- upgrades
 
@@ -198,8 +236,32 @@ export type UpgradeEffect =
   | { readonly kind: "weapon_cooldown_mult"; readonly weapon: WeaponId; readonly amount: number }
   | { readonly kind: "weapon_arc_add"; readonly weapon: WeaponId; readonly degrees: number }
   | { readonly kind: "weapon_projectile_add"; readonly weapon: WeaponId; readonly count: number }
+  /**
+   * The two new weapons' signature lines (issue #44). `weapon_reach_add` widens a
+   * melee weapon's cleave radius — the spin-melee's growth axis, since its arc is
+   * already 360° and cannot open further. `weapon_orbiter_add` puts another orb in
+   * the orbital's ring. Both are weapon-gated exactly like the older weapon lines,
+   * inferred from `weapon` (issue #32).
+   */
+  | { readonly kind: "weapon_reach_add"; readonly weapon: WeaponId; readonly amount: number }
+  | { readonly kind: "weapon_orbiter_add"; readonly weapon: WeaponId; readonly count: number }
   | { readonly kind: "player_speed_mult"; readonly amount: number }
   | { readonly kind: "player_cooldown_mult"; readonly amount: number }
+  /**
+   * The run's first survivability axis (issue #43): the three arms below are the
+   * only upgrades that touch how long the player lives rather than how hard they
+   * hit. Each lands on a seam the player already had — `MAX_HP`, the never-called
+   * `heal()`, and the single `takeDamage` choke — so none of them is new machinery.
+   */
+  | { readonly kind: "player_max_hp_add"; readonly amount: number }
+  | { readonly kind: "player_regen_add"; readonly amount: number }
+  /**
+   * Multiplies incoming damage — so it **compounds** and can never reach immunity
+   * (0.88 per stack, `maxStacks` capped: 0.88⁴ ≈ 0.6, a 40% floor). An additive
+   * −12%/stack would hit zero at stack 9 and go negative past it; the multiplier
+   * is the shape that makes the cap a comfort rather than a hard safety rail.
+   */
+  | { readonly kind: "player_damage_reduction_mult"; readonly amount: number }
   /**
    * Hands the player a weapon they do not have — how the boomerang arrives at
    * 3:00 (issue #32), and how every weapon after it will.

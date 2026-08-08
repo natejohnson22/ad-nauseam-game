@@ -15,15 +15,34 @@ export class Player extends Phaser.GameObjects.Sprite {
   /** `player.gd`'s 100, x10 with the rest of the HP/damage family — see the
       note in `content/weapons.ts` (issue #25). Enemy contact damage scaled with
       it, so the number of touches that kill you is unchanged. */
+  /** The **starting** ceiling — the base `maxHp` before any upgrade, and the seed
+      value the HUD hardcodes at t=0 (`hud-scene.ts`). The live ceiling is the
+      instance `maxHp`, which the Max HP upgrade raises (issue #43). */
   static readonly MAX_HP = 1000;
   static readonly BASE_SPEED = 220;
   static readonly RADIUS = 16;
   private static readonly PIP_RADIUS = 4;
   private static readonly COLOR = 0x40ccff;
 
+  /** The live HP ceiling. Starts at the base and is raised by the Max HP upgrade
+      (issue #43) — an instance field so a pick can move it, where the static above
+      stays the fixed starting constant. */
+  maxHp = Player.MAX_HP;
   hp = Player.MAX_HP;
   /** Mutated by the move-speed upgrade in slice 2. */
   speedMult = 1;
+  /**
+   * HP restored per second — the Regen upgrade (issue #43), summed across stacks.
+   * Zero until taken, so the per-frame heal in `tick` costs nothing for a run
+   * that never picks it. Drives the already-written `heal()`, its first caller.
+   */
+  regenPerSecond = 0;
+  /**
+   * Incoming damage is multiplied by this at the `takeDamage` choke — the Damage
+   * Reduction upgrade (issue #43), one stack `*= 0.88`. Multiplicative, so it
+   * compounds toward but never reaches zero: the stack cap keeps it off immunity.
+   */
+  damageTakenMult = 1;
   /**
    * Damage is ignored while this is set.
    *
@@ -72,7 +91,7 @@ export class Player extends Phaser.GameObjects.Sprite {
       .setDepth(0.1)
       .setVisible(false);
 
-    this.bus.emit("healthChanged", this.hp, Player.MAX_HP);
+    this.bus.emit("healthChanged", this.hp, this.maxHp);
   }
 
   get radius(): number {
@@ -115,6 +134,12 @@ export class Player extends Phaser.GameObjects.Sprite {
 
     this.silenceLeft = Math.max(0, this.silenceLeft - delta);
 
+    // Regen (issue #43). Guarded on being below the ceiling so a topped-up run
+    // does not emit `healthChanged` 60 times a second for a bar that cannot move.
+    if (this.regenPerSecond > 0 && this.hp < this.maxHp) {
+      this.heal(this.regenPerSecond * delta);
+    }
+
     const dir = this.controls.getMoveVector();
     const speed = Player.BASE_SPEED * this.speedMult * this.slowMult;
     // Consumed: this frame's fields have been spent, and the enemies still
@@ -137,8 +162,11 @@ export class Player extends Phaser.GameObjects.Sprite {
 
   takeDamage(amount: number): void {
     if (!this.alive || this.invulnerable) return;
-    this.hp = Math.max(0, this.hp - amount);
-    this.bus.emit("healthChanged", this.hp, Player.MAX_HP);
+    // Damage Reduction is applied here, at the one choke every source of damage
+    // already passes through (issue #43) — so it covers contact, blasts, and
+    // shots without any of them knowing it exists.
+    this.hp = Math.max(0, this.hp - amount * this.damageTakenMult);
+    this.bus.emit("healthChanged", this.hp, this.maxHp);
     if (this.hp <= 0) {
       this.alive = false;
       this.pip.setVisible(false);
@@ -148,7 +176,19 @@ export class Player extends Phaser.GameObjects.Sprite {
 
   heal(amount: number): void {
     if (!this.alive) return;
-    this.hp = Math.min(Player.MAX_HP, this.hp + amount);
-    this.bus.emit("healthChanged", this.hp, Player.MAX_HP);
+    this.hp = Math.min(this.maxHp, this.hp + amount);
+    this.bus.emit("healthChanged", this.hp, this.maxHp);
+  }
+
+  /**
+   * Raise the HP ceiling and bank the gain as health — the Max HP upgrade
+   * (issue #43). Healing by the amount gained is what makes the pick *felt*: the
+   * bar keeps its current fill and grows a taller ceiling, rather than the pick
+   * silently shrinking the fraction the same HP represents.
+   */
+  raiseMaxHp(amount: number): void {
+    this.maxHp += amount;
+    this.hp += amount;
+    this.bus.emit("healthChanged", this.hp, this.maxHp);
   }
 }
