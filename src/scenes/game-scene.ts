@@ -12,6 +12,7 @@ import { DamageNumber } from "../entities/damage-number";
 import { Engagement } from "../entities/engagement";
 import { Enemy } from "../entities/enemy";
 import { EnemyProjectile } from "../entities/enemy-projectile";
+import { Orbiter } from "../entities/orbiter";
 import { Player } from "../entities/player";
 import { SwordSwing } from "../entities/sword-swing";
 import { Progression } from "../systems/progression";
@@ -46,6 +47,7 @@ export class GameScene extends Phaser.Scene {
   private enemyShots!: Pool<EnemyProjectile>;
   private swings!: Pool<SwordSwing>;
   private boomerangs!: Pool<Boomerang>;
+  private orbiters!: Pool<Orbiter>;
   private drops!: Pool<Engagement>;
   private damageNumbers!: Pool<DamageNumber>;
   private director!: SpawnDirector;
@@ -77,6 +79,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyShots = new Pool(this, EnemyProjectile);
     this.swings = new Pool(this, SwordSwing);
     this.boomerangs = new Pool(this, Boomerang);
+    this.orbiters = new Pool(this, Orbiter);
     this.drops = new Pool(this, Engagement);
     this.damageNumbers = new Pool(this, DamageNumber);
 
@@ -89,6 +92,7 @@ export class GameScene extends Phaser.Scene {
       this.enemies,
       this.swings,
       this.boomerangs,
+      this.orbiters,
     );
     // The sword alone. The boomerang used to be equipped on this next line and
     // is now a level-up pick gated to Slow build (issue #32), which is the whole
