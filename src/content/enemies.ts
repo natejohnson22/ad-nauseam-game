@@ -77,8 +77,8 @@ export const ENEMIES = {
     contactInterval: 0.6,
     behavior: {
       kind: "ranged_standoff",
-      range: 330,
-      minRange: 230,
+      range: 280,
+      minRange: 190,
       interval: 2.4,
       telegraph: 0.45,
       damage: 60,

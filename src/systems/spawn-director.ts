@@ -112,7 +112,7 @@ export class SpawnDirector {
    * play). One skipped beat per event, not a lull: the player meets the shape,
    * not the shape on top of a full faucet.
    */
-  static readonly EVENT_PAUSE = 1.5;
+  static readonly EVENT_PAUSE = 2.5;
   /** Row-to-row spacing of a horde wall, stepping outward from the spawn ring. */
   private static readonly WALL_ROW_GAP = 34;
 
