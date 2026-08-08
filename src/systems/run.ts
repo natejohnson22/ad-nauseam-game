@@ -1,8 +1,18 @@
 import { RUN_LENGTH } from "../content/phases";
 import type { GameBus } from "../core/event-bus";
 
-/** Why the run stopped. Slice 3 is what turns each into a screen. */
-export type RunOutcome = "won" | "lost";
+/**
+ * Why the run stopped, and which screen it turns into (issue #37).
+ *
+ * The ending changed shape with the boss: winning is no longer surviving to
+ * 0:00, it is *killing The Algorithm* before then. So the single `lost` split
+ * in two — the two losses want distinct copy (`GameScene.endRun`):
+ * - `won`    — the boss was defeated in time. The victory screen.
+ * - `died`   — the player's HP reached zero. The ad break, as always.
+ * - `timeout` — the clock reached 0:00 with the boss still alive. Its own
+ *   ad-break copy: the run you nearly finished, the ad that never ends.
+ */
+export type RunOutcome = "won" | "died" | "timeout";
 
 /**
  * The tally both end screens report (issue #25). A single object rather than
@@ -80,7 +90,23 @@ export class Run {
       this.announcedSeconds = this.secondsLeft;
       this.bus.emit("timeChanged", this.announcedSeconds);
     }
-    if (this.timeLeft === 0) this.end("won");
+    // The clock reaching zero is a *loss* now (issue #37): the boss outlasted
+    // the player. A run already won by `defeatBoss` is `isOver`, so `end` no-ops
+    // here and the win stands.
+    if (this.timeLeft === 0) this.end("timeout");
+  }
+
+  /**
+   * The win, now that winning is a specific act (issue #37): The Algorithm is
+   * dead. `GameScene.onEnemyDied` calls this when the boss archetype falls, and
+   * the run ends the instant it does — before the clock, and before any respawn
+   * the boss's spawn track would otherwise allow.
+   *
+   * Idempotent through `end`: a boss killed on the same frame the clock expires
+   * wins, because this or the timeout — whichever `end` runs first — latches.
+   */
+  defeatBoss(): void {
+    this.end("won");
   }
 
   /**

@@ -3,8 +3,10 @@ import type { RunStats } from "../systems/run";
 import type { Overlay } from "./overlay";
 
 /**
- * "YOU SURVIVED" — the port of `main.gd`'s `_show_win`, reached when the
- * 5-minute clock runs out.
+ * The victory screen — reached by *killing The Algorithm* before 30:00 (issue
+ * #37), no longer by outlasting a clock. The copy changed with the win: it now
+ * names the kill, because winning is a specific act the player pulled off, not
+ * a timer that expired in their favour.
  *
  * DOM per issue #8, on the same overlay as the level-up modal. Its click
  * handler fires with `GameScene` paused, which is what lets Play Again restart
@@ -22,12 +24,12 @@ export class WinScreen {
     modal.className = "modal win";
 
     const title = document.createElement("h1");
-    title.textContent = "YOU SURVIVED";
+    title.textContent = "THE ALGORITHM IS DEAD";
 
     const summary = document.createElement("p");
     summary.textContent =
-      `You outlasted the Swarm. Kills: ${formatNumber(stats.kills)} · ` +
-      `Damage: ${formatNumber(stats.damage)}`;
+      `You killed The Algorithm and logged off for good. ` +
+      `Kills: ${formatNumber(stats.kills)} · Damage: ${formatNumber(stats.damage)}`;
 
     const again = document.createElement("button");
     again.className = "action";

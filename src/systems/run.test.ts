@@ -28,7 +28,7 @@ describe("Run", () => {
     expect(run.result).toBeNull();
   });
 
-  it("wins when the clock runs out, and clamps at zero", () => {
+  it("times out when the clock runs out with the boss alive, and clamps at zero", () => {
     const bus = new FakeBus();
     const run = new Run(bus);
 
@@ -37,13 +37,35 @@ describe("Run", () => {
 
     run.tick(5);
     expect(run.timeLeft).toBe(0);
+    // Reaching 0:00 is no longer the win — killing the boss is (issue #37). The
+    // clock expiring with the boss still alive is the timeout loss.
+    expect(run.result).toBe("timeout");
+    expect(bus.eventsNamed("runEnded")).toEqual([["timeout"]]);
+  });
+
+  it("wins the instant the boss is defeated, before the clock", () => {
+    const bus = new FakeBus();
+    const run = new Run(bus);
+
+    run.tick(60);
+    run.defeatBoss();
+    expect(run.result).toBe("won");
+    expect(bus.eventsNamed("runEnded")).toEqual([["won"]]);
+  });
+
+  it("does not time out a run already won by killing the boss", () => {
+    const bus = new FakeBus();
+    const run = new Run(bus);
+
+    run.defeatBoss();
+    run.tick(Run.LENGTH); // the clock runs all the way out afterwards
     expect(run.result).toBe("won");
     expect(bus.eventsNamed("runEnded")).toEqual([["won"]]);
   });
 
   it("stops the clock once the run is over", () => {
     const run = new Run(new FakeBus());
-    run.end("lost");
+    run.end("died");
 
     run.tick(10);
     expect(run.timeLeft).toBe(Run.LENGTH);
@@ -53,10 +75,10 @@ describe("Run", () => {
     const bus = new FakeBus();
     const run = new Run(bus);
 
-    run.end("lost");
-    run.end("won");
-    expect(run.result).toBe("lost");
-    expect(bus.eventsNamed("runEnded")).toEqual([["lost"]]);
+    run.end("died");
+    run.defeatBoss();
+    expect(run.result).toBe("died");
+    expect(bus.eventsNamed("runEnded")).toEqual([["died"]]);
   });
 
   it("counts kills until the run ends", () => {
@@ -64,7 +86,7 @@ describe("Run", () => {
     const run = new Run(bus);
     run.recordKill();
     run.recordKill();
-    run.end("lost");
+    run.end("died");
     run.recordKill();
     expect(run.kills).toBe(2);
     expect(bus.eventsNamed("killsChanged")).toEqual([[1], [2]]);
@@ -76,7 +98,7 @@ describe("Run", () => {
 
     run.recordDamage(140);
     run.recordDamage(100);
-    run.end("won");
+    run.defeatBoss();
     run.recordDamage(500);
 
     expect(run.damageDealt).toBe(240);
@@ -117,7 +139,7 @@ describe("Run", () => {
     expect(bus.eventsNamed("timeChanged")).toEqual([[Run.LENGTH - 1]]);
   });
 
-  it("reads 0:00 before it announces the win", () => {
+  it("reads 0:00 before it announces the ending", () => {
     const bus = new FakeBus();
     const run = new Run(bus);
 
@@ -130,7 +152,7 @@ describe("Run", () => {
   it("says nothing about the clock once the run is over", () => {
     const bus = new FakeBus();
     const run = new Run(bus);
-    run.end("lost");
+    run.end("died");
 
     run.tick(10);
     expect(bus.eventsNamed("timeChanged")).toEqual([]);

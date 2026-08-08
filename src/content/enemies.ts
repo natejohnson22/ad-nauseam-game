@@ -160,20 +160,28 @@ export const ENEMIES = {
    * It does not chase. It does not need to.
    *
    * **Deliberately the plainest possible boss** — the shared standoff arm with
-   * heavy numbers, no phases, no adds, no arm of its own (issue #31). Not
-   * because that is the right climax, but because #37 has to size its HP
-   * against a *measured* endgame build and against the run's 30:00 deadline,
-   * and a boring boss you can fight beats a designed one you can only argue
-   * about. The genre research in #33 points the same way: the one sourced dev
-   * statement on end-of-run bosses cut HP and escalated behaviour instead.
+   * heavy numbers, no phases, no adds, no arm of its own (issue #31). #37
+   * confirmed it stays that way: the god_tier spawn stream (six concurrent
+   * tracks) is the chaos, and the boss is a pure HP wall burned down underneath
+   * it. The genre research in #33 points the same way: the one sourced dev
+   * statement on end-of-run bosses cut HP and escalated behaviour instead. If a
+   * later pass wants escalation, that is a fifth behaviour arm, not a number.
    *
-   * So `maxHp` here is a placeholder standing in for a measurement, and if #37
-   * wants escalation it should add a fifth behaviour arm — a boss that changes
-   * how it fights genuinely is a different behaviour.
+   * **`maxHp` is a formula, not a guess (issue #37): `target_TTK × endgame
+   * single-target DPS`, with `target_TTK ≈ 90s` of focused fire — a solid build
+   * clears it with room, a weak build times out.** The DPS is still *unmeasured*:
+   * the map's open "seek the build" problem means the harness can't yet drop you
+   * into a representative ~18-pick endgame, so nobody has read a real endgame DPS
+   * off the HUD. The number below is a provisional stand-in derived from a rough
+   * ~600 focused-DPS estimate (× 90s ≈ 54k); the **god_tier tuning pass owns the
+   * real number** once seek-the-build lands. It joins the ×10 HP/damage family
+   * (issue #25). The boss enters at god_tier open (25:00) — its track fires on
+   * sight — so the whole final 5 minutes is the DPS check.
    */
   the_algorithm: {
     displayName: "The Algorithm",
-    maxHp: 30000,
+    // Provisional: ~90s × ~600 focused DPS. Re-measure once seek-the-build lands.
+    maxHp: 54000,
     speed: 40,
     radius: 48,
     engagementValue: 100,
