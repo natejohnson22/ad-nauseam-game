@@ -255,9 +255,9 @@ describe("SpawnDirector", () => {
       const d = director(sink);
       d.start();
 
-      // God-Tier opens the banner track at 2 per wave, capped at 6. With 5
+      // God-Tier opens the banner track at 2 per wave, capped at 4. With 3
       // alive there is room for exactly one.
-      sink.seed(BANNER, 5);
+      sink.seed(BANNER, 3);
       d.tick(1 / 60, 1500);
       expect(sink.count(BANNER)).toBe(1);
     });
