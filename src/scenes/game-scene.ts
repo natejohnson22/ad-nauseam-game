@@ -63,6 +63,11 @@ export class GameScene extends Phaser.Scene {
   private winScreen!: WinScreen;
   private adBreak!: AdBreak;
   /**
+   * Whether the boss bar was showing last frame, so its hide (#51) fires exactly
+   * once when the boss leaves rather than every frame after.
+   */
+  private bossShown = false;
+  /**
    * The playtest harness (issue #30) — `null` in a production build, where the
    * branch that builds it is compiled away along with the module itself.
    */
@@ -205,6 +210,19 @@ export class GameScene extends Phaser.Scene {
     // exactly as an ordinary spawn is (issue #34).
     this.spawnTelegraphs.each((telegraph) => telegraph.tick(dt));
     this.enemies.each((enemy) => enemy.tick(dt));
+    // Feed the boss bar (#51). Identity is archetype identity, the same check
+    // `onEnemyDied` and `liveCount` make, so the boss needs no flag carried
+    // around. Emit its HP while it lives; the frame after it leaves, hide once.
+    const boss = this.enemies
+      .active()
+      .find((e) => e.archetype === ENEMIES.the_algorithm);
+    if (boss) {
+      this.bus.emit("bossHealthChanged", Math.max(0, boss.hp), boss.archetype.maxHp);
+      this.bossShown = true;
+    } else if (this.bossShown) {
+      this.bus.emit("bossHealthChanged", 0, 0);
+      this.bossShown = false;
+    }
     // After the enemies that fire them, so a shot spawned this frame does not
     // also travel this frame — it would otherwise leave the muzzle already a
     // step out, which is exactly the distance the telegraph promised.

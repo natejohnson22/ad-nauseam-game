@@ -59,6 +59,12 @@ export interface GameEventMap {
   timeChanged: [secondsLeft: number];
   killsChanged: [kills: number];
   damageChanged: [totalDamage: number];
+  /**
+   * The final boss's remaining HP (#51). Fires every frame the boss is alive so
+   * the HUD can render the DPS check's progress; a `maximum` of 0 means the boss
+   * is gone and the bar should hide.
+   */
+  bossHealthChanged: [current: number, maximum: number];
   runEnded: [outcome: RunOutcome];
   inputEnabled: [enabled: boolean];
 }
