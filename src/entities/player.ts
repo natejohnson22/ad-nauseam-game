@@ -74,6 +74,10 @@ export class Player extends Phaser.GameObjects.Sprite {
   /** Seconds of Paywall lockout left — see `silence`. */
   private silenceLeft = 0;
   private readonly pip: Phaser.GameObjects.Sprite;
+  /** When set, the placeholder circle + pip stay hidden so the `PlayerSprite`
+      swordsman can stand in as the body (issue #52). The `Player` still owns all
+      movement, HP, and collision — only its art goes away. */
+  private defaultArtHidden = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -96,6 +100,14 @@ export class Player extends Phaser.GameObjects.Sprite {
 
   get radius(): number {
     return Player.RADIUS;
+  }
+
+  /** Hide the placeholder circle + pip so the swordsman sprite is the body
+      (issue #52). One-way for the run — nothing turns the circle back on. */
+  hideDefaultArt(): void {
+    this.defaultArtHidden = true;
+    this.setVisible(false);
+    this.pip.setVisible(false);
   }
 
   get isAlive(): boolean {
@@ -150,7 +162,7 @@ export class Player extends Phaser.GameObjects.Sprite {
 
     // The facing pip, drawn toward current movement for readability.
     const moving = dir.length() > 0.1;
-    this.pip.setVisible(moving);
+    this.pip.setVisible(moving && !this.defaultArtHidden);
     if (moving) {
       const reach = Player.RADIUS - 5;
       this.pip.setPosition(
@@ -171,6 +183,10 @@ export class Player extends Phaser.GameObjects.Sprite {
       this.alive = false;
       this.pip.setVisible(false);
       this.bus.emit("playerDied");
+    } else {
+      // Survived it — let the swordsman flinch (issue #52). Skipped on the
+      // killing blow above, so death plays the collapse, not a flinch first.
+      this.bus.emit("playerHurt");
     }
   }
 

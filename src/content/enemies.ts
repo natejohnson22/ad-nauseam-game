@@ -77,8 +77,8 @@ export const ENEMIES = {
     contactInterval: 0.6,
     behavior: {
       kind: "ranged_standoff",
-      range: 330,
-      minRange: 230,
+      range: 280,
+      minRange: 190,
       interval: 2.4,
       telegraph: 0.45,
       damage: 60,
@@ -190,7 +190,13 @@ export const ENEMIES = {
     behavior: {
       kind: "ranged_standoff",
       range: 430,
-      minRange: 300,
+      // The boss is a DPS check, not a kiter (#51): it advances into firing
+      // range and then *holds ground* rather than backing off when the player
+      // closes, so the melee/orbital half of the pool can stay on top of it.
+      // `minRange: 0` collapses the standoff's retreat zone — the plainest
+      // possible boss keeps its single arm, it just stops running. Provisional,
+      // owned by the god_tier tuning pass alongside the HP number.
+      minRange: 0,
       interval: 1.8,
       telegraph: 0.6,
       damage: 120,
@@ -198,6 +204,9 @@ export const ENEMIES = {
       travelDistance: 720,
       shot: { kind: "bolt" },
     },
+    // The boss is an immovable wall (#51): weapon knockback would otherwise let
+    // the player push it around the map while parked on it for DPS.
+    knockbackScale: 0,
     color: 0xe6e6f0,
   },
 } satisfies Record<string, EnemyData>;

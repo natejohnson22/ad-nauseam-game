@@ -47,6 +47,20 @@ export class HudScene extends Phaser.Scene {
   } as const;
 
   /**
+   * The final boss's HP bar (#51): wide, centred under the timer, and a deeper
+   * red than the player's pink HP so the two never read as the same gauge. Shown
+   * only while The Algorithm is alive — a 54k-HP DPS check needs visible progress
+   * to be legible as one.
+   */
+  private static readonly BOSS = {
+    x: 640 - 260,
+    y: 80,
+    width: 520,
+    height: 16,
+    color: 0xe01818,
+  } as const;
+
+  /**
    * The right-hand stat column (issue #25). Both labels are right-*origin* and
    * anchored to this x, so they grow leftward: the damage total reaches seven
    * digits in a full run and a left-origin label would walk off the screen.
@@ -69,6 +83,10 @@ export class HudScene extends Phaser.Scene {
   private joystick!: VirtualJoystick;
   private hpFill!: Phaser.GameObjects.Sprite;
   private xpFill!: Phaser.GameObjects.Sprite;
+  /** The boss bar's track, fill, and label — toggled together (#51). */
+  private bossTrack!: Phaser.GameObjects.Sprite;
+  private bossFill!: Phaser.GameObjects.Sprite;
+  private bossLabel!: Phaser.GameObjects.Text;
   private levelLabel!: Phaser.GameObjects.Text;
   private timerLabel!: Phaser.GameObjects.Text;
   private killsLabel!: Phaser.GameObjects.Text;
@@ -91,6 +109,7 @@ export class HudScene extends Phaser.Scene {
   create(): void {
     this.hpFill = this.bar(HudScene.HP);
     this.xpFill = this.bar(HudScene.XP);
+    this.buildBossBar();
 
     this.levelLabel = this.label("LVL 1", 20, 62);
     this.timerLabel = this.label(formatClock(Run.LENGTH), 640 - 40, 14, 32);
@@ -126,6 +145,13 @@ export class HudScene extends Phaser.Scene {
        one readout whose event outruns the display. */
     this.bus.on("damageChanged", (total) => {
       this.damage = total;
+    });
+    /* The boss bar (#51). A `maximum` of 0 is the "boss gone" signal — hide the
+       whole gauge; otherwise draw its remaining HP and show it. */
+    this.bus.on("bossHealthChanged", (current, maximum) => {
+      const alive = maximum > 0;
+      this.setBossVisible(alive);
+      if (alive) this.setBar(this.bossFill, HudScene.BOSS, current, maximum);
     });
 
     /* Last, so it draws over the readouts — `main.gd` adds it to `_ui` last for
@@ -186,6 +212,37 @@ export class HudScene extends Phaser.Scene {
       .sprite(spec.x, spec.y, texture)
       .setOrigin(0, 0)
       .setTint(spec.color);
+  }
+
+  /**
+   * The boss bar's track, fill, and centred label, built hidden — it only
+   * appears once `bossHealthChanged` reports a live boss (#51). Unlike the
+   * player bars, whose track is always on, all three toggle together, so the
+   * track is kept as a field rather than dropped like `bar()` drops its own.
+   */
+  private buildBossBar(): void {
+    const spec = HudScene.BOSS;
+    const texture = rectTexture(this, spec.width, spec.height);
+    this.bossTrack = this.add
+      .sprite(spec.x, spec.y, texture)
+      .setOrigin(0, 0)
+      .setTint(0x000000)
+      .setAlpha(0.55);
+    this.bossFill = this.add
+      .sprite(spec.x, spec.y, texture)
+      .setOrigin(0, 0)
+      .setTint(spec.color);
+    this.bossLabel = this.label("THE ALGORITHM", 640, spec.y - 20)
+      .setOrigin(0.5, 0)
+      .setFontSize(14);
+    this.setBossVisible(false);
+  }
+
+  /** Show or hide the boss bar's three pieces as one (#51). */
+  private setBossVisible(visible: boolean): void {
+    this.bossTrack.setVisible(visible);
+    this.bossFill.setVisible(visible);
+    this.bossLabel.setVisible(visible);
   }
 
   private setBar(

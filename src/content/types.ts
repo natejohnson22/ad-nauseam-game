@@ -138,6 +138,15 @@ export interface EnemyData {
   /** Seconds between contact damage ticks. */
   readonly contactInterval: number;
   readonly behavior: EnemyBehavior;
+  /**
+   * How much weapon knockback displaces this enemy, as a multiplier (default 1).
+   * The final boss sets **0**: a 54k-HP DPS check the player parks on would
+   * otherwise be shoved across the map by its own damage — which is the chase
+   * #51 is really about. It isn't the standoff retreat (`minRange: 0` already
+   * removed that); it's the per-hit knockback teleport in `takeDamage`. A heavy
+   * wall stays where it is.
+   */
+  readonly knockbackScale?: number;
   /** 0xRRGGBB, fed straight to `setTint`. */
   readonly color: number;
 }

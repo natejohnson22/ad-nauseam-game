@@ -430,9 +430,12 @@ export class Enemy extends PooledSprite {
       const dx = this.x - (knockbackFrom.x ?? 0);
       const dy = this.y - (knockbackFrom.y ?? 0);
       const d = Math.hypot(dx, dy);
-      if (d > 0.001) {
-        this.x += (dx / d) * knockback;
-        this.y += (dy / d) * knockback;
+      // Scaled per archetype: the boss is `0` (an immovable wall), everything
+      // else defaults to full knockback (#51).
+      const scale = knockback * (this.archetype.knockbackScale ?? 1);
+      if (d > 0.001 && scale !== 0) {
+        this.x += (dx / d) * scale;
+        this.y += (dy / d) * scale;
       }
     }
 

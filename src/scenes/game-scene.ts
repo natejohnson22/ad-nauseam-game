@@ -15,6 +15,7 @@ import { Enemy } from "../entities/enemy";
 import { EnemyProjectile } from "../entities/enemy-projectile";
 import { Orbiter } from "../entities/orbiter";
 import { Player } from "../entities/player";
+import { PlayerSprite } from "../entities/player-sprite";
 import { SpawnTelegraph } from "../entities/spawn-telegraph";
 import { SwordSwing } from "../entities/sword-swing";
 import { Progression } from "../systems/progression";
@@ -63,16 +64,62 @@ export class GameScene extends Phaser.Scene {
   private winScreen!: WinScreen;
   private adBreak!: AdBreak;
   /**
+   * Whether the boss bar was showing last frame, so its hide (#51) fires exactly
+   * once when the boss leaves rather than every frame after.
+   */
+  private bossShown = false;
+  /**
    * The playtest harness (issue #30) — `null` in a production build, where the
    * branch that builds it is compiled away along with the module itself.
    */
   private dev: DevHarness | null = null;
 
+  /**
+   * The User's on-screen body (issue #52) — the pixel swordsman that follows the
+   * invisible `Player`. `undefined` only under the `?sprite=circle` debug flag,
+   * where the placeholder circle + pip stand in instead.
+   */
+  private playerSprite: PlayerSprite | undefined;
+
+  /**
+   * The death beat (issue #52): true for the ~0.8s between the killing blow and
+   * the ad-break, while the swordsman's collapse plays. The world is frozen
+   * (`update` bails on it) but the scene keeps running, so the death clip — and
+   * only it — animates before "GAME OVER" covers the arena. Reset in `create`
+   * because Phaser reuses this Scene instance across a restart, so a field left
+   * `true` would freeze the *next* run.
+   */
+  private dying = false;
+  /** How long the collapse gets before the ad-break lands — see `dying`. */
+  private static readonly DEATH_BEAT_MS = 800;
+
   constructor() {
     super(GameScene.KEY);
   }
 
+  /**
+   * DEV-only escape hatch: `?sprite=circle` keeps the old placeholder circle +
+   * facing pip instead of the swordsman, for eyeballing the logic centre and
+   * hitbox against the art. Compiled away in production, where the swordsman is
+   * the only player art (issue #52).
+   */
+  private useDebugCircle(): boolean {
+    return (
+      import.meta.env.DEV &&
+      new URLSearchParams(location.search).get("sprite") === "circle"
+    );
+  }
+
+  preload(): void {
+    // Load the swordsman sheets before `create`, unless the debug circle is on.
+    if (!this.useDebugCircle()) PlayerSprite.preload(this);
+  }
+
   create(): void {
+    // Phaser reuses this Scene instance across a restart, so per-run flags must
+    // be re-seeded here rather than trusted to their field initialisers.
+    this.dying = false;
+
     // One bus per run: a bus that outlives the run leaks listeners across the
     // restart boundary into the next one.
     this.bus = new EventBus();
@@ -91,6 +138,14 @@ export class GameScene extends Phaser.Scene {
     this.player = new Player(this, 0, 0, this.controls, this.bus);
     this.cameras.main.startFollow(this.player, false);
 
+    // The swordsman is the player's body (issue #52): hide the circle + pip and
+    // let the follower sprite stand in. The `?sprite=circle` debug flag skips
+    // this and leaves the placeholder art showing.
+    if (!this.useDebugCircle()) {
+      this.player.hideDefaultArt();
+      this.playerSprite = new PlayerSprite(this, 0, 0, this.bus);
+    }
+
     this.weapons = new WeaponManager(
       this.player,
       this.controls,
@@ -98,6 +153,7 @@ export class GameScene extends Phaser.Scene {
       this.swings,
       this.boomerangs,
       this.orbiters,
+      this.bus,
     );
     // The sword alone. The boomerang used to be equipped on this next line and
     // is now a level-up pick gated to Slow build (issue #32), which is the whole
@@ -179,11 +235,18 @@ export class GameScene extends Phaser.Scene {
         director: this.director,
         player: this.player,
         liveEnemies: () => this.enemies.active().length,
+        grantPicks: (n) => this.grantDevPicks(n),
       });
     }
   }
 
   override update(_time: number, delta: number): void {
+    // The death beat (issue #52): hold the whole simulation still so the only
+    // thing moving is the swordsman's collapse, which animates off the sprite's
+    // own `preUpdate` and needs nothing from here. The scene is still running
+    // (not yet paused), so the timer that ends the beat keeps counting.
+    if (this.dying) return;
+
     // Clamped: one frame with a multi-second delta — a resumed tab, or the
     // level-up modal below — would teleport every enemy onto the player.
     const frame = Math.min(delta, 100) / 1000;
@@ -194,6 +257,13 @@ export class GameScene extends Phaser.Scene {
 
     this.run.tick(dt);
     this.player.tick(dt);
+    // Mirror the swordsman onto the player after the player has moved, so it
+    // reads this frame's position and move vector (issue #52).
+    this.playerSprite?.tick(
+      this.player.x,
+      this.player.y,
+      this.controls.getMoveVector(),
+    );
     // After `run.tick`, so the director reads this frame's elapsed time.
     this.director.tick(dt, this.run.elapsed);
     // Also after `run.tick`: the level-up budget's floor and its phase turnover
@@ -204,6 +274,19 @@ export class GameScene extends Phaser.Scene {
     // exactly as an ordinary spawn is (issue #34).
     this.spawnTelegraphs.each((telegraph) => telegraph.tick(dt));
     this.enemies.each((enemy) => enemy.tick(dt));
+    // Feed the boss bar (#51). Identity is archetype identity, the same check
+    // `onEnemyDied` and `liveCount` make, so the boss needs no flag carried
+    // around. Emit its HP while it lives; the frame after it leaves, hide once.
+    const boss = this.enemies
+      .active()
+      .find((e) => e.archetype === ENEMIES.the_algorithm);
+    if (boss) {
+      this.bus.emit("bossHealthChanged", Math.max(0, boss.hp), boss.archetype.maxHp);
+      this.bossShown = true;
+    } else if (this.bossShown) {
+      this.bus.emit("bossHealthChanged", 0, 0);
+      this.bossShown = false;
+    }
     // After the enemies that fire them, so a shot spawned this frame does not
     // also travel this frame — it would otherwise leave the muzzle already a
     // step out, which is exactly the distance the telegraph promised.
@@ -303,24 +386,98 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Grant `n` level-ups back to back — the dev seek-the-build feature (issue
+   * #50), called by the harness once, right after a seek. A `?at=struggle` seek
+   * otherwise drops Nate at level 1 with the sword alone, which measures spawn
+   * pressure and not the difficulty of the ~8-pick build the phase is tuned
+   * around; these modals let him assemble that build by hand before playing.
+   *
+   * The picks are rolled one at a time in `showNextDevPick`, each after the
+   * previous is applied, so a weapon picked in one modal unlocks its upgrades
+   * and stops re-offering in the next — the same sequence a played run walks.
+   */
+  private pendingDevPicks = 0;
+
+  private grantDevPicks(n: number): void {
+    this.pendingDevPicks = n;
+    this.showNextDevPick();
+  }
+
+  /**
+   * Show the next queued dev pick, or resume once the queue drains. The scene
+   * is paused across the whole run of modals — only the last pick resumes it,
+   * exactly as a single `openLevelUp` does — so the seeked world stays frozen
+   * while Nate builds. An empty roll (the pool exhausted) ends the run early
+   * rather than showing an empty modal.
+   */
+  private showNextDevPick(): void {
+    if (this.pendingDevPicks <= 0 || this.run.isOver) return;
+    this.pendingDevPicks -= 1;
+
+    const choices = this.progression.grantPick();
+    if (choices.length === 0) {
+      this.pendingDevPicks = 0;
+      return;
+    }
+
+    this.scene.pause();
+    this.bus.emit("inputEnabled", false);
+    this.levelUpModal.show(choices, (upgrade) => {
+      this.progression.applyUpgrade(upgrade);
+      this.levelUpModal.hide();
+      if (this.pendingDevPicks > 0) {
+        this.showNextDevPick();
+      } else {
+        this.bus.emit("inputEnabled", true);
+        this.scene.resume();
+      }
+    });
+  }
+
+  /**
    * Both endings, in `main.gd`'s order: stop the world, then put a screen over
    * it. Stopping the director matters beyond tidiness — the scene is paused, so
    * a wave queued for this frame would otherwise be waiting on the far side of
    * a restart that never happens.
+   *
+   * Death is the one ending that waits: it lets the swordsman collapse for a
+   * beat (issue #52) before the ad-break covers the arena. The other two put
+   * their screen up at once, exactly as the Godot port did.
    */
   private endRun(outcome: RunOutcome): void {
     this.director.stop();
     // A level-up and the last hit can land on the same frame.
     this.levelUpModal.hide();
-    this.scene.pause();
     this.bus.emit("inputEnabled", false);
 
     const restart = (): void => this.restart();
     // Two losses, two sets of copy (issue #37): the ad break reads the outcome
     // to tell "you died" from "the boss outlasted you." The win screen is now
     // an actual victory — you killed the thing.
-    if (outcome === "won") this.winScreen.show(this.run.stats, restart);
-    else this.adBreak.show(outcome, this.run.stats, restart);
+    const showScreen = (): void => {
+      if (outcome === "won") this.winScreen.show(this.run.stats, restart);
+      else this.adBreak.show(outcome, this.run.stats, restart);
+    };
+
+    // The death beat (issue #52): hold the world still (see `update`) but leave
+    // the scene running so the collapse animates, then pause and cover it. The
+    // scene must not pause *before* the timer, or the timer would never fire.
+    if (outcome === "died") {
+      this.dying = true;
+      // Drop any live cleave first: a sword swing is a 0.18s flicker, and one
+      // caught by the freeze would hang as a green wedge over the collapse for
+      // the whole beat. The rest of the world holding still reads as drama; a
+      // frozen VFX reads as a bug.
+      this.swings.each((swing) => swing.release());
+      this.time.delayedCall(GameScene.DEATH_BEAT_MS, () => {
+        this.scene.pause();
+        showScreen();
+      });
+      return;
+    }
+
+    this.scene.pause();
+    showScreen();
   }
 
   /**

@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import type { Upgrade } from "../content/upgrades";
+import type { WeaponData } from "../content/types";
 import type { RunOutcome } from "../systems/run";
 
 /**
@@ -53,14 +54,37 @@ import type { RunOutcome } from "../systems/run";
  */
 export interface GameEventMap {
   healthChanged: [current: number, maximum: number];
+  /**
+   * The player took a non-lethal hit (issue #52). Distinct from `healthChanged`,
+   * which also fires on heals and max-HP raises: this one means *damage landed
+   * and you survived it*, so the player sprite can play a flinch. The killing
+   * blow emits `playerDied` instead — never both — so a death plays the collapse
+   * rather than a flinch-then-collapse.
+   */
+  playerHurt: [];
   playerDied: [];
   xpChanged: [current: number, needed: number, level: number];
   leveledUp: [choices: readonly Upgrade[]];
   timeChanged: [secondsLeft: number];
   killsChanged: [kills: number];
   damageChanged: [totalDamage: number];
+  /**
+   * The final boss's remaining HP (#51). Fires every frame the boss is alive so
+   * the HUD can render the DPS check's progress; a `maximum` of 0 means the boss
+   * is gone and the bar should hide.
+   */
+  bossHealthChanged: [current: number, maximum: number];
   runEnded: [outcome: RunOutcome];
   inputEnabled: [enabled: boolean];
+  /**
+   * A weapon just auto-fired — its `kind` and the aim direction it fired along
+   * (issue #52). The player sprite listens so its attack pose faces the real
+   * swing rather than a timer of its own; carrying the direction as two numbers
+   * rather than a `Vector2` keeps the payload from sharing `WeaponManager`'s
+   * reused aim vector. An orbital weapon never fires discretely, so it never
+   * emits this — only `melee` and `ranged` do.
+   */
+  weaponFired: [kind: WeaponData["kind"], dirX: number, dirY: number];
 }
 
 /**

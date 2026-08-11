@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { RUN_LENGTH } from "../content/phases";
-import { MAX_TIME_SCALE, isConfigured, parseDevConfig } from "./dev-config";
+import {
+  MAX_PICKS,
+  MAX_TIME_SCALE,
+  isConfigured,
+  parseDevConfig,
+} from "./dev-config";
 
 /**
  * The seek grammar is the whole of what is worth testing here: three spellings
@@ -14,6 +19,7 @@ describe("parseDevConfig", () => {
       startAt: 0,
       timeScale: 1,
       invulnerable: false,
+      picks: 0,
       problems: [],
     });
     expect(isConfigured(config)).toBe(false);
@@ -68,12 +74,35 @@ describe("parseDevConfig", () => {
     expect(parseDevConfig("").invulnerable).toBe(false);
   });
 
+  it("grants a whole number of picks after the seek", () => {
+    expect(parseDevConfig("?picks=8").picks).toBe(8);
+    expect(parseDevConfig("?picks=0").picks).toBe(0);
+    expect(parseDevConfig("").picks).toBe(0);
+  });
+
+  it("clamps an absurd pick count to a typo, not a build", () => {
+    expect(parseDevConfig("?picks=9999").picks).toBe(MAX_PICKS);
+  });
+
+  it("reports a non-integer or negative pick count rather than rounding it", () => {
+    expect(parseDevConfig("?picks=eight").picks).toBe(0);
+    expect(parseDevConfig("?picks=eight").problems).toHaveLength(1);
+    expect(parseDevConfig("?picks=3.5").problems).toHaveLength(1);
+    expect(parseDevConfig("?picks=-2").picks).toBe(0);
+    expect(parseDevConfig("?picks=-2").problems).toHaveLength(1);
+  });
+
+  it("counts a pick grant as a configured run", () => {
+    expect(isConfigured(parseDevConfig("?picks=8"))).toBe(true);
+  });
+
   it("reads a full harness URL", () => {
-    const config = parseDevConfig("?at=panic&speed=4&invuln");
+    const config = parseDevConfig("?at=panic&speed=4&invuln&picks=8");
     expect(config).toEqual({
       startAt: 900,
       timeScale: 4,
       invulnerable: true,
+      picks: 8,
       problems: [],
     });
   });

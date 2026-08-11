@@ -30,6 +30,14 @@ export interface DevConfig {
   readonly timeScale: number;
   readonly invulnerable: boolean;
   /**
+   * How many level-up modals to open right after the seek (issue #50). The
+   * "seek the build, not just the clock" fix: a `?at=struggle` seek arrives at
+   * level 1 with the sword alone, and the picks let Nate hand-build the ~8-pick
+   * arsenal the phase is actually tuned around before playing it. 0 — no
+   * grant, the honest level-1 seek — by default.
+   */
+  readonly picks: number;
+  /**
    * What could not be understood, in the order it was written. Surfaced in the
    * readout rather than thrown: a typo'd param should not blank the game, but a
    * silently-ignored `?at=panci` would be tuned against by mistake.
@@ -45,8 +53,12 @@ export const DEV_DEFAULTS: DevConfig = {
   startAt: 0,
   timeScale: 1,
   invulnerable: false,
+  picks: 0,
   problems: [],
 };
+
+/** More picks than the whole pool holds is a typo, not a request. */
+export const MAX_PICKS = 40;
 
 /**
  * Read `?at=`, `?speed=`, and `?invuln` out of a query string.
@@ -69,6 +81,7 @@ export function parseDevConfig(search: string): DevConfig {
     startAt: readStartAt(params.get("at"), problems),
     timeScale: readTimeScale(params.get("speed"), problems),
     invulnerable: readFlag(params.get("invuln")),
+    picks: readPicks(params.get("picks"), problems),
     problems,
   };
 }
@@ -79,6 +92,7 @@ export function isConfigured(config: DevConfig): boolean {
     config.startAt !== 0 ||
     config.timeScale !== 1 ||
     config.invulnerable ||
+    config.picks !== 0 ||
     config.problems.length > 0
   );
 }
@@ -119,6 +133,25 @@ function readTimeScale(raw: string | null, problems: string[]): number {
     return DEV_DEFAULTS.timeScale;
   }
   return Math.min(Math.max(MIN_TIME_SCALE, value), MAX_TIME_SCALE);
+}
+
+/**
+ * Read `?picks=` — a whole number of level-ups to grant after the seek.
+ *
+ * A non-integer or negative value is a mistake worth surfacing rather than
+ * rounding, for `readStartAt`'s reason: a `?picks=eight` silently read as zero
+ * would have Struggle tuned against the sword-alone build this param exists to
+ * escape. Clamped at `MAX_PICKS`, above which it is a typo, not a build.
+ */
+function readPicks(raw: string | null, problems: string[]): number {
+  if (raw === null || raw === "") return DEV_DEFAULTS.picks;
+
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    problems.push(`picks=${raw}: not a whole number of level-ups`);
+    return DEV_DEFAULTS.picks;
+  }
+  return Math.min(value, MAX_PICKS);
 }
 
 function readFlag(raw: string | null): boolean {
