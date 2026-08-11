@@ -15,6 +15,13 @@ import { Enemy } from "../entities/enemy";
 import { EnemyProjectile } from "../entities/enemy-projectile";
 import { Orbiter } from "../entities/orbiter";
 import { Player } from "../entities/player";
+// PROTOTYPE (playable-character experiment) — remove with `src/prototype/`.
+import type { BaseAvatar } from "../prototype/base-avatar";
+import {
+  avatarKind,
+  createAvatar,
+  preloadAvatar,
+} from "../prototype/avatars";
 import { SpawnTelegraph } from "../entities/spawn-telegraph";
 import { SwordSwing } from "../entities/sword-swing";
 import { Progression } from "../systems/progression";
@@ -73,8 +80,17 @@ export class GameScene extends Phaser.Scene {
    */
   private dev: DevHarness | null = null;
 
+  /** PROTOTYPE (playable-character experiment) — the stand-in art, or `undefined`
+      when the `?sprite=` flag is absent. Remove with `src/prototype/`. */
+  private avatar: BaseAvatar | undefined;
+
   constructor() {
     super(GameScene.KEY);
+  }
+
+  // PROTOTYPE hook — load the selected character's art before `create`, gated.
+  preload(): void {
+    preloadAvatar(this);
   }
 
   create(): void {
@@ -95,6 +111,12 @@ export class GameScene extends Phaser.Scene {
 
     this.player = new Player(this, 0, 0, this.controls, this.bus);
     this.cameras.main.startFollow(this.player, false);
+
+    // PROTOTYPE hook — swap the circle for the selected character when flagged.
+    this.avatar = avatarKind()
+      ? (this.player.hideDefaultArt(),
+        createAvatar(this, 0, 0, this.swings))
+      : undefined;
 
     this.weapons = new WeaponManager(
       this.player,
@@ -200,6 +222,8 @@ export class GameScene extends Phaser.Scene {
 
     this.run.tick(dt);
     this.player.tick(dt);
+    // PROTOTYPE hook — mirror the selected character onto the player, gated.
+    this.avatar?.tick(dt, this.player.x, this.player.y, this.controls.getMoveVector());
     // After `run.tick`, so the director reads this frame's elapsed time.
     this.director.tick(dt, this.run.elapsed);
     // Also after `run.tick`: the level-up budget's floor and its phase turnover

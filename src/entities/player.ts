@@ -74,6 +74,10 @@ export class Player extends Phaser.GameObjects.Sprite {
   /** Seconds of Paywall lockout left — see `silence`. */
   private silenceLeft = 0;
   private readonly pip: Phaser.GameObjects.Sprite;
+  /** PROTOTYPE hook (swordsman-sprite experiment, `src/prototype/`): when set,
+      the circle + pip stay hidden so an external avatar can stand in. Remove
+      with the prototype. */
+  private defaultArtHidden = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -96,6 +100,13 @@ export class Player extends Phaser.GameObjects.Sprite {
 
   get radius(): number {
     return Player.RADIUS;
+  }
+
+  /** PROTOTYPE hook — hide the circle + pip for the swordsman experiment. */
+  hideDefaultArt(): void {
+    this.defaultArtHidden = true;
+    this.setVisible(false);
+    this.pip.setVisible(false);
   }
 
   get isAlive(): boolean {
@@ -150,7 +161,7 @@ export class Player extends Phaser.GameObjects.Sprite {
 
     // The facing pip, drawn toward current movement for readability.
     const moving = dir.length() > 0.1;
-    this.pip.setVisible(moving);
+    this.pip.setVisible(moving && !this.defaultArtHidden);
     if (moving) {
       const reach = Player.RADIUS - 5;
       this.pip.setPosition(
