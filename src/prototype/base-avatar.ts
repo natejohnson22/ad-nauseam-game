@@ -1,12 +1,13 @@
 /**
- * PROTOTYPE — THROWAWAY. Shared spine for the playable-character experiments.
+ * PROTOTYPE — THROWAWAY. Shared spine for the playable-character experiment.
  *
- * Both stand-ins (swordsman, minotaur) are pure follower art: the real `Player`
- * still owns movement / HP / collision and just goes invisible, and the avatar
- * mirrors it each frame. The one non-trivial bit they share lives here — driving
- * the attack off the *real* sword by watching the scene's `SwordSwing` pool, so a
- * fresh cleave plays the attack clip in that cleave's own aim direction with no
- * coupling to `WeaponManager`. Subclasses only say how their art poses.
+ * The stand-in is pure follower art: the real `Player` still owns movement / HP /
+ * collision and just goes invisible, and the avatar mirrors it each frame. The
+ * one non-trivial bit lives here — driving the attack off the *real* sword by
+ * watching the scene's `SwordSwing` pool, so a fresh cleave plays the attack clip
+ * in that cleave's own aim direction with no coupling to `WeaponManager`.
+ * Subclasses only say how their art poses. (A minotaur variant also extended this
+ * before being cut; the base stays a base so a future contender is cheap.)
  */
 import Phaser from "phaser";
 import type { Pool } from "../core/pool";

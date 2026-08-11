@@ -2,8 +2,8 @@
  * PROTOTYPE — THROWAWAY. Not production code.
  *
  * Question this answers: does a real pixel-art swordsman read well as the
- * playable character, in place of the blue circle + facing pip? (Compare against
- * the minotaur via `?sprite=minotaur` — see `avatars.ts`.)
+ * playable character, in place of the blue circle + facing pip? (Yes — this is
+ * the chosen direction; a side-view minotaur was trialled and cut.)
  *
  * How to run it (one command, then one URL):
  *   pnpm dev  →  open the game with  ?sprite=swordsman  in the query string.
