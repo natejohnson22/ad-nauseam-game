@@ -1,10 +1,14 @@
 import Phaser from "phaser";
-import type { RangedWeaponData } from "../content/types";
-import type { Pool } from "../core/pool";
-import { PooledSprite } from "../core/pool";
-import { circleTexture, ringTexture } from "../core/textures";
-import type { Enemy } from "./enemy";
-import type { Player } from "./player";
+import type { RangedWeaponData } from "../../content/types";
+import type { Pool } from "../../core/pool";
+import { PooledSprite } from "../../core/pool";
+import { circleTexture, ringTexture } from "../../core/textures";
+import type { Enemy } from "../enemy";
+import type { Player } from "../player";
+import boomerangUrl from "./assets/boomerang.png";
+
+/** Art-path texture key for the returning boomerang's carved-wood sprite. */
+const BOOMERANG_ART = "dnt_boomerang_art";
 
 /**
  * The `ranged` kind's projectile — the port of `boomerang.gd`, now the entity
@@ -31,6 +35,11 @@ export class Boomerang extends PooledSprite {
   /** How close to the player counts as caught. */
   private static readonly CATCH = 16;
   private static readonly HALO_THICKNESS = 2;
+  /** Radians/sec the carved boomerang twirls in flight — a fast thrown spin. */
+  private static readonly SPIN = 18;
+  /** Native art is 32px; scaled so the visible boomerang reads a touch larger
+   *  than its 16px hit circle without dwarfing the fodder. Tuned by eye. */
+  private static readonly ART_SCALE = 0.85;
 
   private speed = 0;
   private travel = 0;
@@ -49,6 +58,11 @@ export class Boomerang extends PooledSprite {
 
   /** The faint outline `_draw` strokes at `RADIUS + 2`, at half alpha. */
   private readonly halo: Phaser.GameObjects.Sprite;
+
+  /** Load the carved-boomerang art (art path, #60). Call from a scene `preload`. */
+  static preload(scene: Phaser.Scene): void {
+    scene.load.image(BOOMERANG_ART, boomerangUrl);
+  }
 
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0, circleTexture(scene, Boomerang.RADIUS));
@@ -88,12 +102,37 @@ export class Boomerang extends PooledSprite {
     else this.dir.set(1, 0);
 
     this.setPosition(player.x, player.y);
-    this.setTint(data.color);
-    this.halo.setTint(data.color).setPosition(player.x, player.y).setVisible(true);
+
+    if (this.returns) {
+      // The DNT Boomerang wears real art (issue #65): the carved-wood sprite on
+      // the #60 art path — no identity tint — spun in flight (see `tick`). The
+      // tinted halo is the old primitive look, so it stays hidden.
+      this.setTexture(BOOMERANG_ART)
+        .clearTint()
+        .setOrigin(0.5)
+        .setScale(Boomerang.ART_SCALE)
+        .setRotation(0);
+      this.halo.setVisible(false);
+    } else {
+      // The pierce shot (Popup Blocker) keeps the tinted-circle primitive until
+      // its own art lands (issue #66). Reset any art state a pooled boomerang
+      // throw left behind, then restore the original circle + halo.
+      this.setTexture(circleTexture(this.scene, Boomerang.RADIUS))
+        .setScale(1)
+        .setRotation(0)
+        .setTint(data.color);
+      this.halo
+        .setTint(data.color)
+        .setPosition(player.x, player.y)
+        .setVisible(true);
+    }
   }
 
   tick(delta: number): void {
     if (!this.advance(delta)) return;
+
+    // The carved boomerang twirls the whole flight; the pierce circle does not.
+    if (this.returns) this.rotation += Boomerang.SPIN * delta;
 
     for (const [id, remaining] of this.hitCd) {
       this.hitCd.set(id, remaining - delta);
