@@ -15,13 +15,7 @@ import { Enemy } from "../entities/enemy";
 import { EnemyProjectile } from "../entities/enemy-projectile";
 import { Orbiter } from "../entities/orbiter";
 import { Player } from "../entities/player";
-// PROTOTYPE (playable-character experiment) — remove with `src/prototype/`.
-import type { BaseAvatar } from "../prototype/base-avatar";
-import {
-  avatarKind,
-  createAvatar,
-  preloadAvatar,
-} from "../prototype/avatars";
+import { PlayerSprite } from "../entities/player-sprite";
 import { SpawnTelegraph } from "../entities/spawn-telegraph";
 import { SwordSwing } from "../entities/sword-swing";
 import { Progression } from "../systems/progression";
@@ -80,17 +74,33 @@ export class GameScene extends Phaser.Scene {
    */
   private dev: DevHarness | null = null;
 
-  /** PROTOTYPE (playable-character experiment) — the stand-in art, or `undefined`
-      when the `?sprite=` flag is absent. Remove with `src/prototype/`. */
-  private avatar: BaseAvatar | undefined;
+  /**
+   * The User's on-screen body (issue #52) — the pixel swordsman that follows the
+   * invisible `Player`. `undefined` only under the `?sprite=circle` debug flag,
+   * where the placeholder circle + pip stand in instead.
+   */
+  private playerSprite: PlayerSprite | undefined;
 
   constructor() {
     super(GameScene.KEY);
   }
 
-  // PROTOTYPE hook — load the selected character's art before `create`, gated.
+  /**
+   * DEV-only escape hatch: `?sprite=circle` keeps the old placeholder circle +
+   * facing pip instead of the swordsman, for eyeballing the logic centre and
+   * hitbox against the art. Compiled away in production, where the swordsman is
+   * the only player art (issue #52).
+   */
+  private useDebugCircle(): boolean {
+    return (
+      import.meta.env.DEV &&
+      new URLSearchParams(location.search).get("sprite") === "circle"
+    );
+  }
+
   preload(): void {
-    preloadAvatar(this);
+    // Load the swordsman sheets before `create`, unless the debug circle is on.
+    if (!this.useDebugCircle()) PlayerSprite.preload(this);
   }
 
   create(): void {
@@ -112,11 +122,13 @@ export class GameScene extends Phaser.Scene {
     this.player = new Player(this, 0, 0, this.controls, this.bus);
     this.cameras.main.startFollow(this.player, false);
 
-    // PROTOTYPE hook — swap the circle for the selected character when flagged.
-    this.avatar = avatarKind()
-      ? (this.player.hideDefaultArt(),
-        createAvatar(this, 0, 0, this.swings))
-      : undefined;
+    // The swordsman is the player's body (issue #52): hide the circle + pip and
+    // let the follower sprite stand in. The `?sprite=circle` debug flag skips
+    // this and leaves the placeholder art showing.
+    if (!this.useDebugCircle()) {
+      this.player.hideDefaultArt();
+      this.playerSprite = new PlayerSprite(this, 0, 0, this.bus);
+    }
 
     this.weapons = new WeaponManager(
       this.player,
@@ -125,6 +137,7 @@ export class GameScene extends Phaser.Scene {
       this.swings,
       this.boomerangs,
       this.orbiters,
+      this.bus,
     );
     // The sword alone. The boomerang used to be equipped on this next line and
     // is now a level-up pick gated to Slow build (issue #32), which is the whole
@@ -222,8 +235,13 @@ export class GameScene extends Phaser.Scene {
 
     this.run.tick(dt);
     this.player.tick(dt);
-    // PROTOTYPE hook — mirror the selected character onto the player, gated.
-    this.avatar?.tick(dt, this.player.x, this.player.y, this.controls.getMoveVector());
+    // Mirror the swordsman onto the player after the player has moved, so it
+    // reads this frame's position and move vector (issue #52).
+    this.playerSprite?.tick(
+      this.player.x,
+      this.player.y,
+      this.controls.getMoveVector(),
+    );
     // After `run.tick`, so the director reads this frame's elapsed time.
     this.director.tick(dt, this.run.elapsed);
     // Also after `run.tick`: the level-up budget's floor and its phase turnover

@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import type { Upgrade } from "../content/upgrades";
+import type { WeaponData } from "../content/types";
 import type { RunOutcome } from "../systems/run";
 
 /**
@@ -67,6 +68,15 @@ export interface GameEventMap {
   bossHealthChanged: [current: number, maximum: number];
   runEnded: [outcome: RunOutcome];
   inputEnabled: [enabled: boolean];
+  /**
+   * A weapon just auto-fired — its `kind` and the aim direction it fired along
+   * (issue #52). The player sprite listens so its attack pose faces the real
+   * swing rather than a timer of its own; carrying the direction as two numbers
+   * rather than a `Vector2` keeps the payload from sharing `WeaponManager`'s
+   * reused aim vector. An orbital weapon never fires discretely, so it never
+   * emits this — only `melee` and `ranged` do.
+   */
+  weaponFired: [kind: WeaponData["kind"], dirX: number, dirY: number];
 }
 
 /**

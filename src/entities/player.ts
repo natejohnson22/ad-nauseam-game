@@ -74,9 +74,9 @@ export class Player extends Phaser.GameObjects.Sprite {
   /** Seconds of Paywall lockout left — see `silence`. */
   private silenceLeft = 0;
   private readonly pip: Phaser.GameObjects.Sprite;
-  /** PROTOTYPE hook (swordsman-sprite experiment, `src/prototype/`): when set,
-      the circle + pip stay hidden so an external avatar can stand in. Remove
-      with the prototype. */
+  /** When set, the placeholder circle + pip stay hidden so the `PlayerSprite`
+      swordsman can stand in as the body (issue #52). The `Player` still owns all
+      movement, HP, and collision — only its art goes away. */
   private defaultArtHidden = false;
 
   constructor(
@@ -102,7 +102,8 @@ export class Player extends Phaser.GameObjects.Sprite {
     return Player.RADIUS;
   }
 
-  /** PROTOTYPE hook — hide the circle + pip for the swordsman experiment. */
+  /** Hide the placeholder circle + pip so the swordsman sprite is the body
+      (issue #52). One-way for the run — nothing turns the circle back on. */
   hideDefaultArt(): void {
     this.defaultArtHidden = true;
     this.setVisible(false);

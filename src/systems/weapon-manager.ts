@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import type { Mutable, OrbitalWeaponData, WeaponData } from "../content/types";
 import { WEAPONS, type WeaponId } from "../content/weapons";
 import type { Controls } from "../core/controls";
+import type { GameBus } from "../core/event-bus";
 import type { Pool } from "../core/pool";
 import type { Boomerang } from "../entities/boomerang";
 import type { Enemy } from "../entities/enemy";
@@ -52,6 +53,7 @@ export class WeaponManager {
     private readonly swings: Pool<SwordSwing>,
     private readonly boomerangs: Pool<Boomerang>,
     private readonly orbiters: Pool<Orbiter>,
+    private readonly bus: GameBus,
   ) {}
 
   addWeapon(id: WeaponId, data: WeaponData): void {
@@ -232,6 +234,10 @@ export class WeaponManager {
 
   private fire(data: Mutable<WeaponData>): void {
     const dir = this.aimDir();
+    // Announce the shot so the player sprite can pose to the real swing (issue
+    // #52). Emitted once per fire — before the projectile loop below, so a
+    // multi-track fan is one announcement, not one per disc.
+    this.bus.emit("weaponFired", data.kind, dir.x, dir.y);
     switch (data.kind) {
       case "melee":
         this.swings.obtain().spawn(data, dir, this.player, this.enemies);
