@@ -3,14 +3,20 @@ import Phaser from "phaser";
 /**
  * Texture baking — issue #4's decision made concrete.
  *
- * Everything is drawn once with `Graphics#generateTexture()` and rendered
+ * This module is the **primitive path** only (rings, HUD bars, telegraphs,
+ * damage numbers, procedural VFX). Full-colour spritesheets for bodies /
+ * weapons live on a separate **art path** — see ADR 0001 / issue #60. Do not
+ * force multi-colour sheets through white-bake + `setTint`.
+ *
+ * Everything here is drawn once with `Graphics#generateTexture()` and rendered
  * thereafter as a tinted `Sprite`. Nothing calls `clear()` + redraw per frame:
  * under Phaser 4, Graphics/Shape sit on the `Flat` pipeline and Sprites on
  * `Quad`, so interleaving them breaks the batch at every transition.
  *
- * Shapes bake **white** so `setTint` carries all the colour — including
- * `enemy.gd`'s hit-flash lerp, which becomes a tint interpolation rather than a
- * redraw. Tint is a per-vertex attribute and never breaks the batch.
+ * Shapes bake **white** so `setTint` carries all the colour — including the
+ * primitive-path hit-flash lerp (tint interpolation rather than a redraw).
+ * Tint is a per-vertex attribute and never breaks the batch. Art-path
+ * hit-flash is an additive white overlay, not a tint lerp.
  *
  * Textures are cached by key and baked at most once per game.
  */
@@ -116,6 +122,72 @@ export function wedgeTexture(
   const g = scene.make.graphics({ x: 0, y: 0 }, false);
   g.fillStyle(0xffffff, 1);
   g.fillPoints(points, true);
+  g.generateTexture(key, size, size);
+  g.destroy();
+  return key;
+}
+
+/**
+ * A slash-arc "swoosh": a thin curved blade-streak rather than a filled pie
+ * wedge. Key: `slash:<reach>:<arcDegrees>`.
+ *
+ * The cleave reads as the *path the blade travels*, not a cone of area, so it
+ * lines up with the swordsman's own swing animation (issue #59). For the sword's
+ * 100°→200° it is a **tapered crescent** — full `THICKNESS×reach` thick at the
+ * arc's centre, pinching to a point at each tip — which reads as a wispy blade
+ * streak. For the Spam Filter's 360° that taper would pinch the ring to nothing
+ * at the back, so a near-full arc falls back to a **uniform stroked ring**.
+ *
+ * The outer edge sits at `OUTER×reach`, within the `reach × reach` half-texture
+ * so no tip clips. Baked white and tinted the weapon colour like everything
+ * else; `sword_swing` animates only its rotation and alpha, so the handful of
+ * reach/arc pairs a run uses are cached once each, exactly as the old wedge was.
+ */
+export function slashTexture(
+  scene: Phaser.Scene,
+  reach: number,
+  arcDegrees: number,
+): string {
+  const key = `slash:${reach}:${arcDegrees}`;
+  if (scene.textures.exists(key)) return key;
+
+  const OUTER = 0.98; // outer edge, as a fraction of reach
+  const THICKNESS = 0.34; // radial thickness at the arc's centre, ditto
+  const size = reach * 2;
+  const c = reach; // arc centre, at the texture centre
+  const arc = Phaser.Math.DegToRad(arcDegrees);
+  const half = arc * 0.5;
+  const outerR = reach * OUTER;
+
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  g.fillStyle(0xffffff, 1);
+
+  if (arcDegrees >= 300) {
+    // Near-full sweep: a uniform ring band (a stroked circle), so the spin
+    // cleave reads all the way round with no pinch.
+    g.lineStyle(reach * THICKNESS, 0xffffff, 1);
+    g.beginPath();
+    g.arc(c, c, outerR - reach * THICKNESS * 0.5, -half, half);
+    g.strokePath();
+  } else {
+    // A tapered crescent: outer edge along `outerR`, inner edge bulging in by
+    // `THICKNESS` at the centre and easing back out to meet the tips (`taper`
+    // is 1 at centre, 0 at ±half), so both ends come to a point.
+    const STEPS = 24;
+    const pts: Phaser.Math.Vector2[] = [];
+    for (let i = 0; i <= STEPS; i++) {
+      const a = -half + arc * (i / STEPS);
+      pts.push(new Phaser.Math.Vector2(c + Math.cos(a) * outerR, c + Math.sin(a) * outerR));
+    }
+    for (let i = STEPS; i >= 0; i--) {
+      const a = -half + arc * (i / STEPS);
+      const taper = Math.cos((a / half) * (Math.PI / 2));
+      const innerR = outerR - reach * THICKNESS * taper;
+      pts.push(new Phaser.Math.Vector2(c + Math.cos(a) * innerR, c + Math.sin(a) * innerR));
+    }
+    g.fillPoints(pts, true);
+  }
+
   g.generateTexture(key, size, size);
   g.destroy();
   return key;
