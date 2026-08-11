@@ -8,6 +8,7 @@ import { Controls } from "../core/controls";
 import { EventBus, type GameBus } from "../core/event-bus";
 import { Pool } from "../core/pool";
 import { DevHarness } from "../dev/dev-harness";
+import { ArenaBackground } from "../entities/arena-background";
 import { Boomerang } from "../entities/boomerang";
 import { DamageNumber } from "../entities/damage-number";
 import { Engagement } from "../entities/engagement";
@@ -81,6 +82,9 @@ export class GameScene extends Phaser.Scene {
    */
   private playerSprite: PlayerSprite | undefined;
 
+  /** The tiling fantasy-arena floor under the unbounded playfield (issue #63). */
+  private background!: ArenaBackground;
+
   /**
    * The death beat (issue #52): true for the ~0.8s between the killing blow and
    * the ad-break, while the swordsman's collapse plays. The world is frozen
@@ -111,6 +115,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload(): void {
+    // The arena floor is always loaded — it sits under the debug circle too.
+    ArenaBackground.preload(this);
     // Load the swordsman sheets before `create`, unless the debug circle is on.
     if (!this.useDebugCircle()) PlayerSprite.preload(this);
   }
@@ -137,6 +143,10 @@ export class GameScene extends Phaser.Scene {
 
     this.player = new Player(this, 0, 0, this.controls, this.bus);
     this.cameras.main.startFollow(this.player, false);
+
+    // The arena floor, under everything (depth -10). Built after the camera it
+    // reads, before the entities it sits beneath (issue #63).
+    this.background = new ArenaBackground(this);
 
     // The swordsman is the player's body (issue #52): hide the circle + pip and
     // let the follower sprite stand in. The `?sprite=circle` debug flag skips
@@ -241,6 +251,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    // March the floor with the camera every frame, even during the death beat —
+    // it's the one thing under the frozen world that should still track if the
+    // camera settles (issue #63). A frame of lag behind the camera is invisible
+    // on a repeating ground.
+    this.background.tick();
+
     // The death beat (issue #52): hold the whole simulation still so the only
     // thing moving is the swordsman's collapse, which animates off the sprite's
     // own `preUpdate` and needs nothing from here. The scene is still running
