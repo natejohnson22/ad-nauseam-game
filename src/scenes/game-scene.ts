@@ -81,6 +81,18 @@ export class GameScene extends Phaser.Scene {
    */
   private playerSprite: PlayerSprite | undefined;
 
+  /**
+   * The death beat (issue #52): true for the ~0.8s between the killing blow and
+   * the ad-break, while the swordsman's collapse plays. The world is frozen
+   * (`update` bails on it) but the scene keeps running, so the death clip — and
+   * only it — animates before "GAME OVER" covers the arena. Reset in `create`
+   * because Phaser reuses this Scene instance across a restart, so a field left
+   * `true` would freeze the *next* run.
+   */
+  private dying = false;
+  /** How long the collapse gets before the ad-break lands — see `dying`. */
+  private static readonly DEATH_BEAT_MS = 800;
+
   constructor() {
     super(GameScene.KEY);
   }
@@ -104,6 +116,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Phaser reuses this Scene instance across a restart, so per-run flags must
+    // be re-seeded here rather than trusted to their field initialisers.
+    this.dying = false;
+
     // One bus per run: a bus that outlives the run leaks listeners across the
     // restart boundary into the next one.
     this.bus = new EventBus();
@@ -225,6 +241,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    // The death beat (issue #52): hold the whole simulation still so the only
+    // thing moving is the swordsman's collapse, which animates off the sprite's
+    // own `preUpdate` and needs nothing from here. The scene is still running
+    // (not yet paused), so the timer that ends the beat keeps counting.
+    if (this.dying) return;
+
     // Clamped: one frame with a multi-second delta — a resumed tab, or the
     // level-up modal below — would teleport every enemy onto the player.
     const frame = Math.min(delta, 100) / 1000;
@@ -417,20 +439,45 @@ export class GameScene extends Phaser.Scene {
    * it. Stopping the director matters beyond tidiness — the scene is paused, so
    * a wave queued for this frame would otherwise be waiting on the far side of
    * a restart that never happens.
+   *
+   * Death is the one ending that waits: it lets the swordsman collapse for a
+   * beat (issue #52) before the ad-break covers the arena. The other two put
+   * their screen up at once, exactly as the Godot port did.
    */
   private endRun(outcome: RunOutcome): void {
     this.director.stop();
     // A level-up and the last hit can land on the same frame.
     this.levelUpModal.hide();
-    this.scene.pause();
     this.bus.emit("inputEnabled", false);
 
     const restart = (): void => this.restart();
     // Two losses, two sets of copy (issue #37): the ad break reads the outcome
     // to tell "you died" from "the boss outlasted you." The win screen is now
     // an actual victory — you killed the thing.
-    if (outcome === "won") this.winScreen.show(this.run.stats, restart);
-    else this.adBreak.show(outcome, this.run.stats, restart);
+    const showScreen = (): void => {
+      if (outcome === "won") this.winScreen.show(this.run.stats, restart);
+      else this.adBreak.show(outcome, this.run.stats, restart);
+    };
+
+    // The death beat (issue #52): hold the world still (see `update`) but leave
+    // the scene running so the collapse animates, then pause and cover it. The
+    // scene must not pause *before* the timer, or the timer would never fire.
+    if (outcome === "died") {
+      this.dying = true;
+      // Drop any live cleave first: a sword swing is a 0.18s flicker, and one
+      // caught by the freeze would hang as a green wedge over the collapse for
+      // the whole beat. The rest of the world holding still reads as drama; a
+      // frozen VFX reads as a bug.
+      this.swings.each((swing) => swing.release());
+      this.time.delayedCall(GameScene.DEATH_BEAT_MS, () => {
+        this.scene.pause();
+        showScreen();
+      });
+      return;
+    }
+
+    this.scene.pause();
+    showScreen();
   }
 
   /**

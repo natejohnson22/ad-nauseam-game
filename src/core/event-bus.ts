@@ -54,6 +54,14 @@ import type { RunOutcome } from "../systems/run";
  */
 export interface GameEventMap {
   healthChanged: [current: number, maximum: number];
+  /**
+   * The player took a non-lethal hit (issue #52). Distinct from `healthChanged`,
+   * which also fires on heals and max-HP raises: this one means *damage landed
+   * and you survived it*, so the player sprite can play a flinch. The killing
+   * blow emits `playerDied` instead — never both — so a death plays the collapse
+   * rather than a flinch-then-collapse.
+   */
+  playerHurt: [];
   playerDied: [];
   xpChanged: [current: number, needed: number, level: number];
   leveledUp: [choices: readonly Upgrade[]];

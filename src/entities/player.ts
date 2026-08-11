@@ -183,6 +183,10 @@ export class Player extends Phaser.GameObjects.Sprite {
       this.alive = false;
       this.pip.setVisible(false);
       this.bus.emit("playerDied");
+    } else {
+      // Survived it — let the swordsman flinch (issue #52). Skipped on the
+      // killing blow above, so death plays the collapse, not a flinch first.
+      this.bus.emit("playerHurt");
     }
   }
 
