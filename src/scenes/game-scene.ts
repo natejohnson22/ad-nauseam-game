@@ -119,6 +119,10 @@ export class GameScene extends Phaser.Scene {
     ArenaBackground.preload(this);
     // Load the swordsman sheets before `create`, unless the debug circle is on.
     if (!this.useDebugCircle()) PlayerSprite.preload(this);
+    // The DNT Boomerang's carved-wood art and the Firewall's fiery-ring orb,
+    // both on the #60 art path (issue #65).
+    Boomerang.preload(this);
+    Orbiter.preload(this);
   }
 
   create(): void {

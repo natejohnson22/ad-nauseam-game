@@ -1,9 +1,13 @@
 import Phaser from "phaser";
-import type { OrbitalWeaponData } from "../content/types";
-import type { Pool } from "../core/pool";
-import { PooledSprite } from "../core/pool";
-import { circleTexture } from "../core/textures";
-import type { Enemy } from "./enemy";
+import type { OrbitalWeaponData } from "../../content/types";
+import type { Pool } from "../../core/pool";
+import { PooledSprite } from "../../core/pool";
+import { circleTexture } from "../../core/textures";
+import type { Enemy } from "../enemy";
+import orbUrl from "./assets/orb.png";
+
+/** Art-path texture key for the Firewall's fiery-ring orb sprite. */
+const ORB_ART = "firewall_orb_art";
 
 /**
  * One orb of an orbital weapon — the Firewall's revolving shield (issue #44).
@@ -21,6 +25,13 @@ import type { Enemy } from "./enemy";
  */
 export class Orbiter extends PooledSprite {
   private static readonly RADIUS = 12;
+  /** Half-extent of the 32px orb art, so a scale maps native px to world px. */
+  private static readonly ART_HALF = 16;
+  /** The fiery ring reads a touch past its bare hit radius. */
+  private static readonly ART_MARGIN = 1.15;
+  /** Radians/sec the flame ring turns on its own axis — a slow ward spin, not
+   *  the boomerang's fast throw twirl. */
+  private static readonly SPIN = 3;
 
   private damage = 0;
   private knockback = 0;
@@ -29,6 +40,11 @@ export class Orbiter extends PooledSprite {
 
   private enemies!: Pool<Enemy>;
   private readonly hitCd = new Map<number, number>();
+
+  /** Load the fiery-ring art (art path, #60). Call from a scene `preload`. */
+  static preload(scene: Phaser.Scene): void {
+    scene.load.image(ORB_ART, orbUrl);
+  }
 
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0, circleTexture(scene, Orbiter.RADIUS));
@@ -45,15 +61,23 @@ export class Orbiter extends PooledSprite {
     this.enemies = enemies;
     this.hitCd.clear();
 
-    // Baked at RADIUS; scale the sprite to the weapon's orb size so the drawn
-    // circle matches the reach the hit test uses.
-    this.setScale(data.orbiterRadius / Orbiter.RADIUS);
-    this.setTint(data.color);
+    // The Firewall wears real art (issue #65): the fiery-ring sprite on the #60
+    // art path — no identity tint — scaled so its ring sits a touch past the
+    // reach the hit test uses, and turned on its own axis each frame (see
+    // `place`). Scaling from `orbiterRadius` keeps the ring matched to the reach
+    // when the `+1 orbiter radius` upgrade grows it.
+    this.setTexture(ORB_ART)
+      .clearTint()
+      .setOrigin(0.5)
+      .setRotation(0)
+      .setScale((data.orbiterRadius * Orbiter.ART_MARGIN) / Orbiter.ART_HALF);
   }
 
   /** Set by `WeaponManager` each frame, then damage whatever the orb touches. */
   place(x: number, y: number, delta: number): void {
     this.setPosition(x, y);
+    // The flame ring turns on its own axis as it revolves around the player.
+    this.rotation += Orbiter.SPIN * delta;
 
     for (const [id, remaining] of this.hitCd) {
       this.hitCd.set(id, remaining - delta);
