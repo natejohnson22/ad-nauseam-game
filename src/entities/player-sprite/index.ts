@@ -115,9 +115,12 @@ export class PlayerSprite extends Phaser.GameObjects.Sprite {
     // Just above the player's own depth (0) so the body reads over the floor,
     // still below the sword cleave (depth 1).
     this.setDepth(0.05);
-    // ~1.5x reads a touch taller than the 32px circle — a hero, not a token.
-    // Origin nudged up so the torso, not the shadow, sits on the logic centre.
-    this.setScale(1.5).setOrigin(0.5, 0.58);
+    // 1.8x so the hero reads clearly larger than the fodder on a phone screen:
+    // at 1.5x the visible body landed at roughly a Popup Grunt's size once the
+    // 1280x720 arena is FIT-scaled onto a landscape mobile viewport (issue #52
+    // item 6). Origin nudged up so the torso, not the shadow, sits on the logic
+    // centre.
+    this.setScale(1.8).setOrigin(0.5, 0.58);
     this.play(`${IDLE}_down`);
 
     // attack / hurt / death are the only non-looping clips; clear their state on
