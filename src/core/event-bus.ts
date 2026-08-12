@@ -85,6 +85,14 @@ export interface GameEventMap {
    * emits this — only `melee` and `ranged` do.
    */
   weaponFired: [kind: WeaponData["kind"], dirX: number, dirY: number];
+  /**
+   * A shot just landed at `x, y` — the pierce shot tagging an enemy, an enemy
+   * bolt or lockout hitting the player (issue #66). The scene owns the `Impact`
+   * pool and plays a one-shot explosion burst there, so the projectiles stay
+   * decoupled from the pool that dresses their landings. Pure feedback: nothing
+   * about damage or collision rides on this.
+   */
+  impact: [x: number, y: number];
 }
 
 /**

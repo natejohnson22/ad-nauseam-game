@@ -1,8 +1,14 @@
 import Phaser from "phaser";
-import type { EnemyBehavior } from "../content/types";
-import { PooledSprite } from "../core/pool";
-import { circleTexture, ringTexture } from "../core/textures";
-import type { Player } from "./player";
+import type { EnemyBehavior } from "../../content/types";
+import type { GameBus } from "../../core/event-bus";
+import { PooledSprite } from "../../core/pool";
+import type { Player } from "../player";
+import boltUrl from "./assets/bolt.png";
+import lockoutUrl from "./assets/lockout.png";
+
+/** Art-path texture keys for the two enemy shots (issue #66). */
+const BOLT_ART = "enemy_bolt_art";
+const LOCKOUT_ART = "paywall_lockout_art";
 
 /**
  * What a `ranged_standoff` enemy fires — the first thing in this game that
@@ -15,13 +21,25 @@ import type { Player } from "./player";
  * for the ranged half of the roster — a shot the player can read the instant it
  * appears and outrun by moving, in a game where movement is the only defence.
  *
+ * The two flavours wear distinct art on the #60 path — no identity tint (issue
+ * #66): a neutral stone bolt (Tracking Pixel, The Algorithm) and the fat red
+ * Paywall lockout orb. The lockout is deliberately bigger and slower so the
+ * player can see the silence coming — the whole reason it is fair.
+ *
  * Pooled like everything else, so every field is reset in `spawn()`; see the
  * note on `Pool`.
  */
 export class EnemyProjectile extends PooledSprite {
+  /** The bolt's hit radius — kept as a logical number, not the sprite's visual
+   *  scale, so the art can be sized by eye without moving the hitbox. */
   private static readonly RADIUS = 6;
-  /** The faint outline, as `Boomerang` wears — it reads at a glance in a swarm. */
-  private static readonly HALO_THICKNESS = 2;
+  /** The lockout is the fat one: its hit radius is 1.8× the bolt's, unchanged
+   *  from the primitive era so gameplay is identical to before the art. */
+  private static readonly LOCKOUT_HIT_SCALE = 1.8;
+  /** Native art is 32px. Visual scales tuned by eye — decoupled from the hit
+   *  radii above so sizing the sprites never touches fairness. */
+  private static readonly BOLT_SCALE = 0.55;
+  private static readonly LOCKOUT_SCALE = 0.95;
 
   private readonly dir = new Phaser.Math.Vector2(1, 0);
   private speed = 0;
@@ -30,29 +48,24 @@ export class EnemyProjectile extends PooledSprite {
   private travelLeft = 0;
   /** Seconds of weapon lockout to apply on hit; 0 for a plain bolt. */
   private lockout = 0;
+  /** The logical hit radius for this shot — bolt or lockout. */
+  private hitRadius = EnemyProjectile.RADIUS;
 
   private player!: Player;
-  private readonly halo: Phaser.GameObjects.Sprite;
+  private bus!: GameBus;
+
+  /** Load the bolt and lockout art (art path, #60). Call from a scene
+   *  `preload`. */
+  static preload(scene: Phaser.Scene): void {
+    scene.load.image(BOLT_ART, boltUrl);
+    scene.load.image(LOCKOUT_ART, lockoutUrl);
+  }
 
   constructor(scene: Phaser.Scene) {
-    super(scene, 0, 0, circleTexture(scene, EnemyProjectile.RADIUS));
+    super(scene, 0, 0, BOLT_ART);
     // Above the enemies that fire it, below the player's own boomerang: when
     // both are on screen the one the player controls should be the readable one.
     this.setDepth(2.55);
-
-    this.halo = scene.add
-      .sprite(
-        0,
-        0,
-        ringTexture(
-          scene,
-          EnemyProjectile.RADIUS + 2,
-          EnemyProjectile.HALO_THICKNESS,
-        ),
-      )
-      .setDepth(2.55)
-      .setAlpha(0.5)
-      .setVisible(false);
   }
 
   /**
@@ -69,6 +82,7 @@ export class EnemyProjectile extends PooledSprite {
     y: number,
     dir: Phaser.Math.Vector2,
     player: Player,
+    bus: GameBus,
   ): void {
     this.setPosition(x, y);
     this.dir.copy(dir).normalize();
@@ -76,6 +90,7 @@ export class EnemyProjectile extends PooledSprite {
     this.damage = behavior.damage;
     this.travelLeft = behavior.travelDistance;
     this.player = player;
+    this.bus = bus;
 
     const shot = behavior.shot;
     switch (shot.kind) {
@@ -87,19 +102,25 @@ export class EnemyProjectile extends PooledSprite {
         break;
     }
 
-    // The lockout shot is the fat slow one, and it has to be distinguishable
-    // from a Pixel's bolt across a crowded screen — the whole reason it is fair
-    // is that the player can see it coming.
-    this.setScale(this.lockout > 0 ? 1.8 : 1);
-    this.halo.setScale(this.getScale()).setVisible(true);
-    this.refreshTint();
+    // Each flavour wears its own sheet — no tint carries identity (issue #66).
+    // The lockout keeps its 1.8× hit radius from the primitive era, so the shot
+    // the player has to dodge is exactly as big as it always was.
+    const isLockout = this.lockout > 0;
+    this.setTexture(isLockout ? LOCKOUT_ART : BOLT_ART)
+      .clearTint()
+      .setOrigin(0.5)
+      .setScale(
+        isLockout ? EnemyProjectile.LOCKOUT_SCALE : EnemyProjectile.BOLT_SCALE,
+      );
+    this.hitRadius = isLockout
+      ? EnemyProjectile.RADIUS * EnemyProjectile.LOCKOUT_HIT_SCALE
+      : EnemyProjectile.RADIUS;
   }
 
   tick(delta: number): void {
     const step = this.speed * delta;
     this.x += this.dir.x * step;
     this.y += this.dir.y * step;
-    this.halo.setPosition(this.x, this.y);
 
     this.travelLeft -= step;
     if (this.travelLeft <= 0) {
@@ -107,7 +128,7 @@ export class EnemyProjectile extends PooledSprite {
       return;
     }
 
-    const reach = EnemyProjectile.RADIUS * this.getScale() + this.player.radius;
+    const reach = this.hitRadius + this.player.radius;
     if (
       this.player.isAlive &&
       Phaser.Math.Distance.Between(
@@ -126,24 +147,9 @@ export class EnemyProjectile extends PooledSprite {
     // After the damage, and unguarded: `Player.silence` decides for itself
     // whether it applies (dead, or invulnerable under the harness).
     if (this.lockout > 0) this.player.silence(this.lockout);
+    // Burst where it landed on the player (issue #66) — the clearest "you got
+    // hit" feedback the shot can give.
+    this.bus.emit("impact", this.x, this.y);
     this.release();
-  }
-
-  /** Takes the halo with it — the pool only knows about the sprite itself. */
-  override release(): void {
-    this.halo.setVisible(false);
-    super.release();
-  }
-
-  /** The scale is uniform, so either axis is the answer. */
-  private getScale(): number {
-    return this.scaleX;
-  }
-
-  /** Lockout shots wear the Paywall's red; bolts stay a neutral hostile white. */
-  private refreshTint(): void {
-    const color = this.lockout > 0 ? 0xd94f4f : 0xffd8e6;
-    this.setTint(color);
-    this.halo.setTint(color);
   }
 }
