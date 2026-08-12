@@ -13,6 +13,7 @@ import { Boomerang } from "../entities/boomerang";
 import { DamageNumber } from "../entities/damage-number";
 import { Engagement } from "../entities/engagement";
 import { Enemy } from "../entities/enemy";
+import { preloadEnemyArt } from "../entities/enemy-sprite";
 import { EnemyProjectile } from "../entities/enemy-projectile";
 import { Orbiter } from "../entities/orbiter";
 import { Player } from "../entities/player";
@@ -123,6 +124,9 @@ export class GameScene extends Phaser.Scene {
     // both on the #60 art path (issue #65).
     Boomerang.preload(this);
     Orbiter.preload(this);
+    // Enemy bodies with real art (Popup Grunt slime today, issue #67). The
+    // circle roster loads nothing here — the registry only holds art archetypes.
+    preloadEnemyArt(this);
   }
 
   create(): void {

@@ -2,6 +2,13 @@ import Phaser from "phaser";
 import type { EnemyBehavior, EnemyData } from "../content/types";
 import { PooledSprite } from "../core/pool";
 import { circleTexture, ringTexture } from "../core/textures";
+import {
+  type EnemyArt,
+  enemyAnimKey,
+  ensureEnemyAnims,
+  getEnemyArt,
+} from "./enemy-sprite";
+import { type Facing, facingXY } from "./player-sprite/facing";
 import type { Player } from "./player";
 
 /**
@@ -60,6 +67,8 @@ export class Enemy extends PooledSprite {
   private static readonly AURA_ALPHA = 0.22;
   /** How far a shooter's muzzle flare sits outside its body. */
   private static readonly MUZZLE_MARGIN = 8;
+  /** How long an art enemy takes to pop up into the world, in ms. */
+  private static readonly POP_MS = 240;
   /** Reused for every shot's aim, so firing allocates nothing. */
   private static readonly aim = new Phaser.Math.Vector2();
 
@@ -86,6 +95,28 @@ export class Enemy extends PooledSprite {
   private flash = 0;
   /** Last flash value pushed to the tint, so the tint is set only on change. */
   private tintedAt = -1;
+
+  /**
+   * This archetype's real art, or `undefined` while it's still a tinted circle.
+   * When set, the sprite animates itself (idle/walk/death) instead of baking a
+   * circle, and the hit-flash becomes an additive white-out — see #60 / #67.
+   */
+  private art: EnemyArt | undefined;
+  /** Which way the body faces, driven by its per-frame movement. */
+  private artFacing: Facing = "down";
+  /**
+   * The spawn "pop up" — a scale bounce from nothing to full, kept so a recycled
+   * sprite kills a still-running pop before starting its own (and so death can
+   * snap to full scale rather than freezing the body mid-grow).
+   */
+  private popTween: Phaser.Tweens.Tween | undefined;
+  /**
+   * Latched on the killing blow of an art enemy: the logic is already dead
+   * (`onEnemyDied` fired, HP is 0), but the sprite lingers to play its death
+   * clip and only returns to the pool on that clip's completion. `tick` no-ops
+   * while it's set, so a corpse neither chases nor deals contact damage.
+   */
+  private dying = false;
 
   /**
    * The wind-up clock, shared by both attacking arms — `telegraph_aoe`'s blast
@@ -121,6 +152,23 @@ export class Enemy extends PooledSprite {
       .setDepth(2.5)
       .setTint(Enemy.TELEGRAPH_COLOR)
       .setVisible(false);
+
+    // Every archetype's clips, built once (idempotent). Cheap for the circle
+    // roster — the registry only holds the archetypes that have real art.
+    ensureEnemyAnims(scene);
+
+    // The only non-looping enemy clip is death; when it finishes, the corpse
+    // that has been lingering finally goes back to the pool. The `dying` guard
+    // means idle/walk completions (there are none — they loop) can't trip it.
+    this.on(
+      Phaser.Animations.Events.ANIMATION_COMPLETE,
+      (anim: Phaser.Animations.Animation) => {
+        if (this.dying && this.art && anim.key === enemyAnimKey(this.art, "death", this.artFacing)) {
+          this.dying = false;
+          this.release();
+        }
+      },
+    );
   }
 
   /** Re-initialise a recycled sprite. `setup()` + `_ready()` from Godot. */
@@ -143,13 +191,38 @@ export class Enemy extends PooledSprite {
     this.attackState = "idle";
     this.attackWind = 0;
     this.attackCd = 0;
+    this.dying = false;
+    // Kill any pop still running on a recycled sprite before it's re-scaled,
+    // whichever kind of enemy it's coming back as.
+    this.popTween?.remove();
+    this.popTween = undefined;
     this.ring.setVisible(false);
 
     this.setPosition(x, y);
-    // One baked texture per archetype radius, not one scaled texture: scaling a
-    // tiny circle up is how placeholder art ends up looking like a smudge.
-    this.setTexture(circleTexture(this.scene, data.radius));
-    this.refreshTint();
+    this.art = getEnemyArt(data.displayName);
+    if (this.art) {
+      // Real art: the sprite plays its own idle clip in full colour, so the
+      // identity tint is dropped (a coloured sheet × a tint is mud — #60).
+      this.artFacing = "down";
+      this.setTintMode(Phaser.TintModes.MULTIPLY).clearTint();
+      this.play(enemyAnimKey(this.art, "idle", "down"));
+      // The Popup Grunt *pops up*: a fast Back-eased scale bounce from nothing
+      // to full, overshooting a touch so it lands with a little life. Runs on
+      // top of the idle/walk clip and the chase — purely the entrance.
+      this.setScale(0);
+      this.popTween = this.scene.tweens.add({
+        targets: this,
+        scale: this.art.scale,
+        duration: Enemy.POP_MS,
+        ease: "Back.easeOut",
+      });
+    } else {
+      // One baked texture per archetype radius, not one scaled texture: scaling
+      // a tiny circle up is how placeholder art ends up looking like a smudge.
+      // `setScale(1)` undoes any art scale a recycled sprite is carrying.
+      this.setScale(1).setTexture(circleTexture(this.scene, data.radius));
+      this.refreshTint();
+    }
     // After the position, so a standing aura is drawn where the enemy actually
     // is on its first frame rather than wherever the pool last left it.
     this.resetRing(data.behavior);
@@ -203,7 +276,15 @@ export class Enemy extends PooledSprite {
   }
 
   tick(delta: number): void {
+    // A corpse mid-death-clip is still active in the pool until the clip ends;
+    // it holds its ground, plays out, and touches nothing until then.
+    if (this.dying) return;
+
     const behavior = this.archetype.behavior;
+    // Captured before the behaviour moves us, so the pose reads the frame's
+    // actual displacement — which way it *went*, not which way the player is.
+    const fromX = this.x;
+    const fromY = this.y;
     switch (behavior.kind) {
       case "chase":
         this.chase(delta);
@@ -224,6 +305,22 @@ export class Enemy extends PooledSprite {
 
     this.flash = Math.max(0, this.flash - delta * Enemy.FLASH_DECAY);
     this.refreshTint();
+
+    if (this.art) this.updateArtPose(this.x - fromX, this.y - fromY);
+  }
+
+  /**
+   * Face the way the body moved this frame and play walk or idle to match. A
+   * planted enemy (winding up, or held in a standoff band) shows idle — the
+   * stillness that is itself a telegraph. `play(…, true)` ignores a re-request
+   * of the clip already running, so this is a no-op on the frames it doesn't
+   * change anything.
+   */
+  private updateArtPose(dx: number, dy: number): void {
+    const moving = Math.hypot(dx, dy) > 0.01;
+    if (moving) this.artFacing = facingXY(dx, dy);
+    const name = moving ? "walk" : "idle";
+    this.play(enemyAnimKey(this.art!, name, this.artFacing), true);
   }
 
   private chase(delta: number): void {
@@ -445,10 +542,31 @@ export class Enemy extends PooledSprite {
     this.events.onEnemyDamaged(this, amount);
 
     if (this.hp <= 0) {
-      // Released first, so the drop that lands on this position is not competing
-      // with a sprite the pool is about to hand back out.
-      this.release();
-      this.events.onEnemyDied(this);
+      if (this.art) {
+        // The logic dies now — kill counted, engagement dropped at this spot —
+        // but the sprite lingers to play its death clip and only releases on the
+        // clip's completion (the constructor's ANIMATION_COMPLETE). `dying`
+        // stops it chasing or dealing contact damage in the meantime. Cleared of
+        // the white-out so the death frames read in their own colour.
+        this.dying = true;
+        this.ring.setVisible(false);
+        // A grunt killed mid-pop snaps to full size so the death plays at the
+        // body's real scale rather than freezing it half-grown.
+        this.popTween?.remove();
+        this.popTween = undefined;
+        this.setScale(this.art.scale);
+        // Drop any FILL-mode white-out the last hit left on, so the death frames
+        // read in their own colour rather than a white silhouette.
+        this.setTintMode(Phaser.TintModes.MULTIPLY).clearTint();
+        this.tintedAt = -1;
+        this.play(enemyAnimKey(this.art, "death", this.artFacing));
+        this.events.onEnemyDied(this);
+      } else {
+        // Released first, so the drop that lands on this position is not
+        // competing with a sprite the pool is about to hand back out.
+        this.release();
+        this.events.onEnemyDied(this);
+      }
     } else {
       this.refreshTint();
     }
@@ -458,6 +576,19 @@ export class Enemy extends PooledSprite {
   private refreshTint(): void {
     if (this.flash === this.tintedAt) return;
     this.tintedAt = this.flash;
+
+    if (this.art) {
+      // A coloured sheet can't be lerped toward white by a multiply tint, so
+      // the flash is a FILL-mode white-out: the body reads as a solid white
+      // silhouette for the brightest ~0.12s of the hit, then back to its art.
+      // (Phaser 4 split the fill flag off `setTint` into `setTintMode`.)
+      if (this.flash > 0.25) {
+        this.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+      } else {
+        this.setTintMode(Phaser.TintModes.MULTIPLY).clearTint();
+      }
+      return;
+    }
 
     const c = this.archetype.color;
     const toward = (channel: number): number =>

@@ -282,6 +282,10 @@ export class WeaponManager {
     let best: Enemy | null = null;
     let bestD = Infinity;
     for (const enemy of this.enemies.active()) {
+      // An art enemy stays active while its death clip plays out; a corpse is
+      // not a target, so auto-aim skips anything already dead (hp <= 0). A no-op
+      // for circle enemies, which the pool releases the instant they die.
+      if (enemy.hp <= 0) continue;
       const d = Phaser.Math.Distance.Squared(
         this.player.x,
         this.player.y,
