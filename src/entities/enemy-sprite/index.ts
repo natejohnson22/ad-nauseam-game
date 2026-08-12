@@ -29,6 +29,14 @@ import cookieBannerIdle from "./assets/cookie-banner/idle.png";
 import cookieBannerWalk from "./assets/cookie-banner/walk.png";
 import cookieBannerDeath from "./assets/cookie-banner/death.png";
 
+import trackingPixelIdle from "./assets/tracking-pixel/idle.png";
+import trackingPixelWalk from "./assets/tracking-pixel/walk.png";
+import trackingPixelDeath from "./assets/tracking-pixel/death.png";
+
+import paywallIdle from "./assets/paywall/idle.png";
+import paywallWalk from "./assets/paywall/walk.png";
+import paywallDeath from "./assets/paywall/death.png";
+
 /** The three states a chase enemy needs; ranged/aura archetypes reuse the same
  *  set (their telegraph is the shared `ring`, not a body clip). */
 export type EnemyAnimName = "idle" | "walk" | "death";
@@ -101,10 +109,60 @@ const COOKIE_BANNER: EnemyArt = {
   scale: 2.7,
 };
 
+/**
+ * Tracking Pixel — craftpix **Free Enemy Pixel Pack** *Sorcerer*, the plain
+ * grey-hooded staff-caster (research #56: the family's ranged body). Back to a
+ * **64×64 cell** like the slime — the 128 was the ogre's alone — laid out
+ * down/up/left/right; idle 4 / walk 6 / death 10 columns. The ranged telegraph
+ * is the shared `ring`, not a body clip, so idle/walk/death is the whole set.
+ */
+const TRACKING_PIXEL: EnemyArt = {
+  key: "tracking_pixel",
+  sheets: {
+    idle: trackingPixelIdle,
+    walk: trackingPixelWalk,
+    death: trackingPixelDeath,
+  },
+  frame: { width: 64, height: 64 },
+  cols: { idle: 4, walk: 6, death: 10 },
+  row: { down: 0, up: 1, left: 2, right: 3 },
+  // A nimble plinker (speed 105): idle hovers, walk keeps pace with the kite,
+  // death is snappy so a corpse never blocks the shot line it leaves behind.
+  frameRate: { idle: 6, walk: 10, death: 14 },
+  // The caster fills ~40px of its 64px cell. 1.4 gives it real standoff
+  // presence around its 18px hitbox — Nate's eyeball: the first pass at 0.9 read
+  // too small, and this is the size the Paywall's first pass had before it grew.
+  scale: 1.4,
+};
+
+/**
+ * Paywall — a **distinct second caster** (Nate's call over a recolour): an
+ * ornate crowned red-and-gold armoured sorcerer, so the advanced ranged threat
+ * doesn't read as a bigger Tracking Pixel. Same 64×64 four-facing layout and
+ * column counts as the Sorcerer; only the sheets and the heavier weighting
+ * differ.
+ */
+const PAYWALL: EnemyArt = {
+  key: "paywall",
+  sheets: { idle: paywallIdle, walk: paywallWalk, death: paywallDeath },
+  frame: { width: 64, height: 64 },
+  cols: { idle: 4, walk: 6, death: 10 },
+  row: { down: 0, up: 1, left: 2, right: 3 },
+  // Heavier and more deliberate than the Pixel (speed 46, a 0.9s wind-up): idle
+  // barely stirs, the walk is a slow plant-and-advance, death stays snappy.
+  frameRate: { idle: 5, walk: 7, death: 12 },
+  // The advanced caster towers over the basic Pixel without becoming a full
+  // wall like the Cookie Banner (2.7) — 2.0 on the 64px cell reads as the big,
+  // ornate threat around its 48px hitbox, clearly outsizing the 1.4 Pixel.
+  scale: 2.0,
+};
+
 /** Every archetype with real art, keyed by `EnemyData.displayName`. */
 const ENEMY_ART: Record<string, EnemyArt> = {
   "Popup Grunt": POPUP_GRUNT,
   "Cookie Banner": COOKIE_BANNER,
+  "Tracking Pixel": TRACKING_PIXEL,
+  Paywall: PAYWALL,
 };
 
 /** The descriptor for an archetype, or `undefined` if it's still a primitive. */
