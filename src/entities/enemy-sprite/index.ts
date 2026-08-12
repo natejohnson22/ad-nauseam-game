@@ -1,0 +1,126 @@
+/**
+ * Real animated art for the enemy roster — the #60 art path applied to the
+ * pooled `Enemy` (issue #67, map #55).
+ *
+ * Unlike the player, an enemy is **not** a follower sprite: `Enemy` already *is*
+ * a `Sprite`, and there are dozens of them pooled, so the art lives on the enemy
+ * itself. This module is just the data + setup around that — a per-archetype
+ * `EnemyArt` descriptor, the `preload`, and the anim clips. `enemy.ts` reads a
+ * descriptor in `spawn()` and, when one exists, swaps the tinted circle for the
+ * spritesheet; archetypes with no descriptor keep the primitive path untouched.
+ *
+ * Descriptors are keyed by `displayName` so `content/` stays free of render
+ * concerns. This is the reference for the other four enemy tickets (#68–#71).
+ *
+ * Assets ride the same craftpix top-down family + licence as the swordsman
+ * (royalty-free, no attribution, commercial-OK, no reselling loose files, no
+ * AI-training — see research #56 / ADR 0001). **But the row order is not the
+ * swordsman's:** each sheet's facing→row map lives on the descriptor because the
+ * families differ (the Slime is down/up/left/right, not down/left/right/up).
+ */
+import Phaser from "phaser";
+import type { Facing } from "../player-sprite/facing";
+
+import popupGruntIdle from "./assets/popup-grunt/idle.png";
+import popupGruntWalk from "./assets/popup-grunt/walk.png";
+import popupGruntDeath from "./assets/popup-grunt/death.png";
+
+/** The three states a chase enemy needs; ranged/aura archetypes reuse the same
+ *  set (their telegraph is the shared `ring`, not a body clip). */
+export type EnemyAnimName = "idle" | "walk" | "death";
+
+const ANIM_NAMES: readonly EnemyAnimName[] = ["idle", "walk", "death"];
+const FACINGS: readonly Facing[] = ["down", "up", "left", "right"];
+
+export interface EnemyArt {
+  /** Stable prefix for this archetype's textures + anim keys. */
+  readonly key: string;
+  /** Loaded spritesheet URLs, one per state. */
+  readonly sheets: Record<EnemyAnimName, string>;
+  /** Cell size of every sheet in the set. */
+  readonly frame: { readonly width: number; readonly height: number };
+  /** Columns (frame count) per state — a facing's clip is one row of these. */
+  readonly cols: Record<EnemyAnimName, number>;
+  /** Which sheet row holds each facing. Per-descriptor because the family's
+   *  packs disagree — the Slime is not laid out like the swordsman. */
+  readonly row: Record<Facing, number>;
+  readonly frameRate: Record<EnemyAnimName, number>;
+  /** On-screen scale of the 64px cell — tuned so the body reads at its hitbox. */
+  readonly scale: number;
+}
+
+/**
+ * Popup Grunt — craftpix **Free Slime Mobs** (Aqua). 64×64, rows are
+ * down/up/left/right (0/1/2/3); idle 6 / walk 8 / death 10 columns.
+ */
+const POPUP_GRUNT: EnemyArt = {
+  key: "popup_grunt",
+  sheets: { idle: popupGruntIdle, walk: popupGruntWalk, death: popupGruntDeath },
+  frame: { width: 64, height: 64 },
+  cols: { idle: 6, walk: 8, death: 10 },
+  row: { down: 0, up: 1, left: 2, right: 3 },
+  // Idle breathes slowly; walk pushes the swarm; death is snappy so corpses
+  // don't linger under a wave.
+  frameRate: { idle: 6, walk: 10, death: 16 },
+  // The slime body fills ~40px of its 64px cell; ~0.96 keeps the blob reading
+  // clearly larger than its 26px hitbox (Nate eyeballed up 20% from 0.8).
+  scale: 0.96,
+};
+
+/** Every archetype with real art, keyed by `EnemyData.displayName`. */
+const ENEMY_ART: Record<string, EnemyArt> = {
+  "Popup Grunt": POPUP_GRUNT,
+};
+
+/** The descriptor for an archetype, or `undefined` if it's still a primitive. */
+export function getEnemyArt(displayName: string): EnemyArt | undefined {
+  return ENEMY_ART[displayName];
+}
+
+/** Spritesheet texture key for a state. */
+export const enemySheetKey = (art: EnemyArt, name: EnemyAnimName): string =>
+  `${art.key}_${name}`;
+
+/** Anim clip key for a state + facing. */
+export const enemyAnimKey = (
+  art: EnemyArt,
+  name: EnemyAnimName,
+  facing: Facing,
+): string => `${art.key}_${name}_${facing}`;
+
+/** Load every registered archetype's sheets. Call from a scene `preload`. */
+export function preloadEnemyArt(scene: Phaser.Scene): void {
+  for (const art of Object.values(ENEMY_ART)) {
+    const frame = { frameWidth: art.frame.width, frameHeight: art.frame.height };
+    for (const name of ANIM_NAMES) {
+      scene.load.spritesheet(enemySheetKey(art, name), art.sheets[name], frame);
+    }
+  }
+}
+
+/**
+ * Build every archetype's per-facing clips once. Idempotent (keys are checked),
+ * so it's safe to call from every `Enemy` constructor. Death is one-shot; idle
+ * and walk loop. A facing's frames are the `cols` cells of its row.
+ */
+export function ensureEnemyAnims(scene: Phaser.Scene): void {
+  for (const art of Object.values(ENEMY_ART)) {
+    for (const name of ANIM_NAMES) {
+      const cols = art.cols[name];
+      for (const facing of FACINGS) {
+        const key = enemyAnimKey(art, name, facing);
+        if (scene.anims.exists(key)) continue;
+        const start = art.row[facing] * cols;
+        scene.anims.create({
+          key,
+          frames: scene.anims.generateFrameNumbers(enemySheetKey(art, name), {
+            start,
+            end: start + cols - 1,
+          }),
+          frameRate: art.frameRate[name],
+          repeat: name === "death" ? 0 : -1,
+        });
+      }
+    }
+  }
+}
