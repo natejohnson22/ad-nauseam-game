@@ -25,6 +25,10 @@ import popupGruntIdle from "./assets/popup-grunt/idle.png";
 import popupGruntWalk from "./assets/popup-grunt/walk.png";
 import popupGruntDeath from "./assets/popup-grunt/death.png";
 
+import cookieBannerIdle from "./assets/cookie-banner/idle.png";
+import cookieBannerWalk from "./assets/cookie-banner/walk.png";
+import cookieBannerDeath from "./assets/cookie-banner/death.png";
+
 /** The three states a chase enemy needs; ranged/aura archetypes reuse the same
  *  set (their telegraph is the shared `ring`, not a body clip). */
 export type EnemyAnimName = "idle" | "walk" | "death";
@@ -67,9 +71,40 @@ const POPUP_GRUNT: EnemyArt = {
   scale: 0.96,
 };
 
+/**
+ * Cookie Banner — craftpix **Free Top-Down Orc** family, the brown *ogre* body
+ * (Nate's aesthetic call: an ogre reads as the fat, heavy wall better than the
+ * orc warrior; fiction/name unchanged). This pack is a **bigger cell than the
+ * swordsman/slime — 128×128, not 64** (the research's "larger bodies may use a
+ * bigger cell" warning made real), which is exactly why `frame` lives on the
+ * descriptor. Rows are down/up/left/right (same as the slime, *not* the
+ * swordsman); idle 4 / walk 8 / death 8 columns.
+ */
+const COOKIE_BANNER: EnemyArt = {
+  key: "cookie_banner",
+  sheets: {
+    idle: cookieBannerIdle,
+    walk: cookieBannerWalk,
+    death: cookieBannerDeath,
+  },
+  frame: { width: 128, height: 128 },
+  cols: { idle: 4, walk: 8, death: 8 },
+  row: { down: 0, up: 1, left: 2, right: 3 },
+  // Heavier and more lumbering than the grunt: idle barely stirs, the walk is a
+  // slow trudge to match its 52px/s crawl, death stays snappy so the fat corpse
+  // doesn't sit under the swarm.
+  frameRate: { idle: 5, walk: 8, death: 14 },
+  // 128px cell. The body deliberately dwarfs its 30px hitbox — Nate's call: the
+  // Cookie Banner should read as a genuine *wall*, towering over the swordsman
+  // and the swarm, not a merely-bulky grunt. 2.7 (3× the first 0.9 pass) is the
+  // eyeballed size; the hitbox/aura are unchanged, so this is pure presence.
+  scale: 2.7,
+};
+
 /** Every archetype with real art, keyed by `EnemyData.displayName`. */
 const ENEMY_ART: Record<string, EnemyArt> = {
   "Popup Grunt": POPUP_GRUNT,
+  "Cookie Banner": COOKIE_BANNER,
 };
 
 /** The descriptor for an archetype, or `undefined` if it's still a primitive. */
