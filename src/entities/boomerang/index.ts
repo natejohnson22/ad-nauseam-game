@@ -1,14 +1,18 @@
 import Phaser from "phaser";
 import type { RangedWeaponData } from "../../content/types";
+import type { GameBus } from "../../core/event-bus";
 import type { Pool } from "../../core/pool";
 import { PooledSprite } from "../../core/pool";
-import { circleTexture, ringTexture } from "../../core/textures";
+import { circleTexture } from "../../core/textures";
 import type { Enemy } from "../enemy";
 import type { Player } from "../player";
 import boomerangUrl from "./assets/boomerang.png";
+import pierceUrl from "./assets/pierce.png";
 
 /** Art-path texture key for the returning boomerang's carved-wood sprite. */
 const BOOMERANG_ART = "dnt_boomerang_art";
+/** Art-path texture key for the Popup Blocker's pierce-shot embers (issue #66). */
+const PIERCE_ART = "popup_blocker_pierce_art";
 
 /**
  * The `ranged` kind's projectile — the port of `boomerang.gd`, now the entity
@@ -34,12 +38,14 @@ export class Boomerang extends PooledSprite {
   private static readonly RADIUS = 8;
   /** How close to the player counts as caught. */
   private static readonly CATCH = 16;
-  private static readonly HALO_THICKNESS = 2;
   /** Radians/sec the carved boomerang twirls in flight — a fast thrown spin. */
   private static readonly SPIN = 18;
   /** Native art is 32px; scaled so the visible boomerang reads a touch larger
    *  than its 16px hit circle without dwarfing the fodder. Tuned by eye. */
   private static readonly ART_SCALE = 0.85;
+  /** The pierce embers are also 32px native; a hair larger than the boomerang
+   *  so the committed line reads as the heavier shot. Tuned by eye. */
+  private static readonly PIERCE_SCALE = 0.95;
 
   private speed = 0;
   private travel = 0;
@@ -55,29 +61,19 @@ export class Boomerang extends PooledSprite {
 
   private player!: Player;
   private enemies!: Pool<Enemy>;
+  private bus!: GameBus;
 
-  /** The faint outline `_draw` strokes at `RADIUS + 2`, at half alpha. */
-  private readonly halo: Phaser.GameObjects.Sprite;
-
-  /** Load the carved-boomerang art (art path, #60). Call from a scene `preload`. */
+  /** Load the carved-boomerang and pierce-ember art (art path, #60). Call from
+   *  a scene `preload`. */
   static preload(scene: Phaser.Scene): void {
     scene.load.image(BOOMERANG_ART, boomerangUrl);
+    scene.load.image(PIERCE_ART, pierceUrl);
   }
 
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0, circleTexture(scene, Boomerang.RADIUS));
     // Above the enemies it flies through, below the engagement drops.
     this.setDepth(2.6);
-
-    this.halo = scene.add
-      .sprite(
-        0,
-        0,
-        ringTexture(scene, Boomerang.RADIUS + 2, Boomerang.HALO_THICKNESS),
-      )
-      .setDepth(2.6)
-      .setAlpha(0.5)
-      .setVisible(false);
   }
 
   spawn(
@@ -85,6 +81,7 @@ export class Boomerang extends PooledSprite {
     dir: Phaser.Math.Vector2,
     player: Player,
     enemies: Pool<Enemy>,
+    bus: GameBus,
   ): void {
     this.speed = data.projectileSpeed;
     this.travel = data.travelDistance;
@@ -93,6 +90,7 @@ export class Boomerang extends PooledSprite {
     this.returns = data.returns;
     this.player = player;
     this.enemies = enemies;
+    this.bus = bus;
 
     this.distOut = 0;
     this.returning = false;
@@ -105,26 +103,21 @@ export class Boomerang extends PooledSprite {
 
     if (this.returns) {
       // The DNT Boomerang wears real art (issue #65): the carved-wood sprite on
-      // the #60 art path — no identity tint — spun in flight (see `tick`). The
-      // tinted halo is the old primitive look, so it stays hidden.
+      // the #60 art path — no identity tint — spun in flight (see `tick`).
       this.setTexture(BOOMERANG_ART)
         .clearTint()
         .setOrigin(0.5)
         .setScale(Boomerang.ART_SCALE)
         .setRotation(0);
-      this.halo.setVisible(false);
     } else {
-      // The pierce shot (Popup Blocker) keeps the tinted-circle primitive until
-      // its own art lands (issue #66). Reset any art state a pooled boomerang
-      // throw left behind, then restore the original circle + halo.
-      this.setTexture(circleTexture(this.scene, Boomerang.RADIUS))
-        .setScale(1)
-        .setRotation(0)
-        .setTint(data.color);
-      this.halo
-        .setTint(data.color)
-        .setPosition(player.x, player.y)
-        .setVisible(true);
+      // The pierce shot (Popup Blocker) now wears its own art too (issue #66):
+      // the fiery embers on the #60 art path — no identity tint — oriented along
+      // the shot so the committed line reads as a directed streak, not a blob.
+      this.setTexture(PIERCE_ART)
+        .clearTint()
+        .setOrigin(0.5)
+        .setScale(Boomerang.PIERCE_SCALE)
+        .setRotation(this.dir.angle());
     }
   }
 
@@ -146,10 +139,12 @@ export class Boomerang extends PooledSprite {
       ) {
         enemy.takeDamage(this.damage, { x: this.x, y: this.y }, this.knockback);
         this.hitCd.set(enemy.spawnId, Boomerang.HIT_INTERVAL);
+        // The pierce shot bursts where it tags an enemy (issue #66); the
+        // returning boomerang keeps its clean unimpacted flight (#65). The
+        // per-enemy hit cooldown throttles this to one burst per tag.
+        if (!this.returns) this.bus.emit("impact", enemy.x, enemy.y);
       }
     }
-
-    this.halo.setPosition(this.x, this.y);
   }
 
   /** Moves one step. `false` once it has been caught and released. */
@@ -181,11 +176,5 @@ export class Boomerang extends PooledSprite {
     this.x += (dx / d) * step;
     this.y += (dy / d) * step;
     return true;
-  }
-
-  /** Takes the halo with it — the pool only knows about the sprite itself. */
-  override release(): void {
-    this.halo.setVisible(false);
-    super.release();
   }
 }

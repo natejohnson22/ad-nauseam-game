@@ -254,7 +254,13 @@ export class WeaponManager {
             .obtain()
             // Cloned: `aimDir` hands back a shared vector, and rotating it in
             // place would compound the spread across the volley.
-            .spawn(data, dir.clone().rotate(spread), this.player, this.enemies);
+            .spawn(
+              data,
+              dir.clone().rotate(spread),
+              this.player,
+              this.enemies,
+              this.bus,
+            );
         }
         break;
       }

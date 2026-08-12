@@ -15,6 +15,7 @@ import { Engagement } from "../entities/engagement";
 import { Enemy } from "../entities/enemy";
 import { preloadEnemyArt } from "../entities/enemy-sprite";
 import { EnemyProjectile } from "../entities/enemy-projectile";
+import { Impact } from "../entities/impact";
 import { Orbiter } from "../entities/orbiter";
 import { Player } from "../entities/player";
 import { PlayerSprite } from "../entities/player-sprite";
@@ -57,6 +58,8 @@ export class GameScene extends Phaser.Scene {
   private orbiters!: Pool<Orbiter>;
   private drops!: Pool<Engagement>;
   private damageNumbers!: Pool<DamageNumber>;
+  /** One-shot explosion bursts where shots land (issue #66). */
+  private impacts!: Pool<Impact>;
   private director!: SpawnDirector;
   private weapons!: WeaponManager;
   private progression!: Progression;
@@ -127,6 +130,10 @@ export class GameScene extends Phaser.Scene {
     // Enemy bodies with real art (Popup Grunt slime today, issue #67). The
     // circle roster loads nothing here — the registry only holds art archetypes.
     preloadEnemyArt(this);
+    // The pierce/bolt/lockout magic sprites and the explosion-burst strip, all
+    // on the #60 art path (issue #66).
+    EnemyProjectile.preload(this);
+    Impact.preload(this);
   }
 
   create(): void {
@@ -148,6 +155,11 @@ export class GameScene extends Phaser.Scene {
     this.orbiters = new Pool(this, Orbiter);
     this.drops = new Pool(this, Engagement);
     this.damageNumbers = new Pool(this, DamageNumber);
+    this.impacts = new Pool(this, Impact);
+
+    // A landed shot dresses itself with a burst here, decoupled from the
+    // projectile that fired it (issue #66).
+    this.bus.on("impact", (x, y) => this.impacts.obtain().spawn(x, y));
 
     this.player = new Player(this, 0, 0, this.controls, this.bus);
     this.cameras.main.startFollow(this.player, false);
@@ -356,7 +368,7 @@ export class GameScene extends Phaser.Scene {
   ): void {
     this.enemyShots
       .obtain()
-      .spawn(behavior, enemy.x, enemy.y, dir, this.player);
+      .spawn(behavior, enemy.x, enemy.y, dir, this.player, this.bus);
   }
 
   /** `main.gd`'s `_on_enemy_died`: count the kill, drop the engagement. */
