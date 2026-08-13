@@ -206,6 +206,68 @@ export function bakeScanline(
   return key;
 }
 
+/** A **padlock body** — a rounded-rect block with a small dark keyhole punched
+ *  out of it (a notch + a slot). The lock face of a "Subscribe to continue"
+ *  modal (the Paywall), and the core of the lockout projectile (#86). Tinted
+ *  `CYAN`/`FRAME` at rest, bled toward `ALERT` as it snaps shut. Baked as its
+ *  own texture so a shackle can be placed above it and lift/slam independently.
+ */
+export function bakePadlockBody(
+  scene: Phaser.Scene,
+  key: string,
+  w: number,
+  h: number,
+): string {
+  if (scene.textures.exists(key)) return key;
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  g.fillStyle(0xffffff, 1);
+  g.fillRoundedRect(0, 0, w, h, Math.max(2, Math.round(w * 0.16)));
+  // Punch a keyhole: a round hole with a tapering slot below it, erased so the
+  // dark screen behind reads through — the one detail that says "lock", not
+  // "box". `erase` clears back to transparent on the white fill.
+  g.fillStyle(0x000000, 1);
+  const cx = w / 2;
+  const holeR = Math.max(1.5, w * 0.14);
+  const holeY = h * 0.42;
+  g.setBlendMode(Phaser.BlendModes.ERASE);
+  g.fillCircle(cx, holeY, holeR);
+  g.fillRect(cx - holeR * 0.5, holeY, holeR, h * 0.34);
+  g.setBlendMode(Phaser.BlendModes.NORMAL);
+  g.generateTexture(key, w, h);
+  g.destroy();
+  return key;
+}
+
+/** A **padlock shackle** — the U-shaped hasp that arcs over the lock body. A
+ *  stroked semicircle with two short legs, its texture origin the caller sets to
+ *  bottom-centre so it lifts (unlocked) and slams down (locked) on its base.
+ *  Tinted like the body; rendered ADD it reads as backlit chrome. */
+export function bakePadlockShackle(
+  scene: Phaser.Scene,
+  key: string,
+  w: number,
+  legH: number,
+  thickness = 3,
+): string {
+  if (scene.textures.exists(key)) return key;
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  const p = Math.ceil(thickness / 2) + 1;
+  const r = (w - p * 2) / 2; // arc radius so the U spans `w`
+  const cx = w / 2;
+  const archY = p + r; // arc centre; the arch bulges up to `p`
+  g.lineStyle(thickness, 0xffffff, 1);
+  g.beginPath();
+  g.arc(cx, archY, r, Math.PI, Math.PI * 2, false); // top semicircle
+  g.strokePath();
+  // Two legs dropping from the arc ends down to the texture's bottom edge.
+  g.fillStyle(0xffffff, 1);
+  g.fillRect(cx - r - thickness / 2, archY, thickness, legH);
+  g.fillRect(cx + r - thickness / 2, archY, thickness, legH);
+  g.generateTexture(key, w, archY + legH);
+  g.destroy();
+  return key;
+}
+
 /**
  * Make a hidden, tinted sprite piece at (0,0) — the one-liner every controller
  * repeats for each primitive it owns. Mirrors `algorithm-vfx`'s local `mk`.
@@ -254,4 +316,8 @@ export interface UiConstruct {
   die(x: number, y: number, done: () => void): void;
   /** Hide every owned piece (recycled as another archetype, or pooled). */
   hide(): void;
+  /** Tear down owned pieces. A pooled `Enemy` calls this when it is recycled
+   *  as a *different* construct type, so the old rig does not leak hidden
+   *  sprites (the per-type guard #81 left for #82+). */
+  destroy(): void;
 }

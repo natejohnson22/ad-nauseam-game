@@ -280,6 +280,16 @@ export class PopupGruntVfx implements UiConstruct {
     this.setVisible(false);
   }
 
+  destroy(): void {
+    this.hide();
+    this.frame.destroy();
+    this.title.destroy();
+    this.close.destroy();
+    this.scan.destroy();
+    this.cursor.destroy();
+    for (const g of this.glyphs) g.destroy();
+  }
+
   private setVisible(v: boolean): void {
     this.frame.setVisible(v);
     this.title.setVisible(v);

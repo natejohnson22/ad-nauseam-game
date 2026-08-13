@@ -345,6 +345,18 @@ export class CookieBannerVfx implements UiConstruct {
     this.setVisible(false);
   }
 
+  destroy(): void {
+    this.hide();
+    this.frame.destroy();
+    this.headline.destroy();
+    this.button.destroy();
+    this.buttonLabel.destroy();
+    this.reject.destroy();
+    this.scan.destroy();
+    this.cursor.destroy();
+    for (const g of this.body) g.destroy();
+  }
+
   private setVisible(v: boolean): void {
     this.frame.setVisible(v);
     this.headline.setVisible(v);
