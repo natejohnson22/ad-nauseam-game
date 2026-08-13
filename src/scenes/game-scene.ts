@@ -130,9 +130,8 @@ export class GameScene extends Phaser.Scene {
     // Enemy bodies with real art (Popup Grunt slime today, issue #67). The
     // circle roster loads nothing here — the registry only holds art archetypes.
     preloadEnemyArt(this);
-    // The pierce/bolt/lockout magic sprites and the explosion-burst strip, all
-    // on the #60 art path (issue #66).
-    EnemyProjectile.preload(this);
+    // The explosion-burst strip (issue #66). Ad-side projectiles bake from the
+    // UI-construct kit on first spawn — no preload, no assets (#86).
     Impact.preload(this);
   }
 

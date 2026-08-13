@@ -5,9 +5,9 @@
  * spritesheet art, and The Algorithm's boss rig (#71).
  *
  * Keyed by `displayName` so `content/` stays free of render concerns — exactly
- * like `getEnemyArt` and `isAlgorithm`. Issue #81 ships the first member (the
- * Popup Grunt); tickets #82–#86 add the rest, each a new controller assembled
- * from the same kit.
+ * like `getEnemyArt` and `isAlgorithm`. All five remaining enemies ship on this
+ * path (#81–#85). Ad-side projectiles (#86) assemble from the same kit inside
+ * `enemy-projectile`, not as `UiConstruct` controllers.
  */
 import Phaser from "phaser";
 import { AutoplayOgreVfx } from "./autoplay-ogre";

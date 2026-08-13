@@ -19,9 +19,10 @@
  * On the wind-up it **locks**: the shackle slams shut, the lock and CTA bleed
  * toward the reserved telegraph **orange**, exactly as the Tracking Pixel's
  * reticle body does (#83, carried into #84) — while the muzzle telegraph `ring`
- * stays family white (gated on `isConstruct` in `enemy.ts`). It fires the shared
- * enemy bolt today; the procedural **lockout** shot is the projectiles ticket
- * (#86). The pooled `Enemy` sprite becomes the modal's dark **screen**, and this
+ * stays family white (gated on `isConstruct` in `enemy.ts`). It fires the
+ * procedural **lockout** shot (#86) — a flying padlock on a modal shard, wearing
+ * this construct's local checkout-green. The pooled `Enemy` sprite becomes the
+ * modal's dark **screen**, and this
  * controller owns the frame / title-bar / dimmed content / padlock / Subscribe
  * CTA / cursor / scanline as siblings around it — the `algorithm-vfx` pattern
  * (#71) one path down, exactly like the three constructs before it.

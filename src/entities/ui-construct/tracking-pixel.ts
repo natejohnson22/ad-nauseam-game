@@ -9,7 +9,8 @@
  * tight orange **lock** the instant before it fires. Fiction, hitbox, aura,
  * depth, damage timing, spawn behaviour, and footprint are all **frozen**; only
  * the render changes. Its ranged telegraph stays the shared muzzle `ring`, and
- * it fires the shared enemy **bolt** — this controller only draws the body.
+ * it fires the shared enemy **bolt** (procedural notification mote, #86) — this
+ * controller only draws the body.
  *
  * The pooled `Enemy` sprite becomes the reticle's dark central **pixel**; this
  * controller owns the four corner brackets, the crosshair ticks, the blinking
