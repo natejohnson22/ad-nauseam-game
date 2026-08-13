@@ -37,6 +37,10 @@ import paywallIdle from "./assets/paywall/idle.png";
 import paywallWalk from "./assets/paywall/walk.png";
 import paywallDeath from "./assets/paywall/death.png";
 
+import autoplayOgreIdle from "./assets/autoplay-ogre/idle.png";
+import autoplayOgreWalk from "./assets/autoplay-ogre/walk.png";
+import autoplayOgreDeath from "./assets/autoplay-ogre/death.png";
+
 /** The three states a chase enemy needs; ranged/aura archetypes reuse the same
  *  set (their telegraph is the shared `ring`, not a body clip). */
 export type EnemyAnimName = "idle" | "walk" | "death";
@@ -157,12 +161,43 @@ const PAYWALL: EnemyArt = {
   scale: 2.0,
 };
 
+/**
+ * Autoplay Video Ogre — craftpix **Demons (4-direction)** family, the purple
+ * *Demon1* trident body (Nate's call: the purple imp matches the archetype's
+ * existing `#9933b3` tint; fiction/name unchanged). Same **128×128 cell as the
+ * Cookie Banner** — the demon body sits small in that cell (~33×56px of it), so
+ * the scale runs large to make the mini-boss tower. Rows are down/up/left/right
+ * like the rest of the family; idle 4 / walk 6 / death 13 columns. The 1.1s AoE
+ * slam telegraph stays the shared `ring`, so idle/walk/death is the whole set
+ * (no attack clip).
+ */
+const AUTOPLAY_OGRE: EnemyArt = {
+  key: "autoplay_ogre",
+  sheets: {
+    idle: autoplayOgreIdle,
+    walk: autoplayOgreWalk,
+    death: autoplayOgreDeath,
+  },
+  frame: { width: 128, height: 128 },
+  cols: { idle: 4, walk: 6, death: 13 },
+  row: { down: 0, up: 1, left: 2, right: 3 },
+  // A slow, heavy slammer (speed 38): idle barely stirs, the walk is a lumbering
+  // trudge, death is a longer 13-frame collapse befitting a mini-boss but still
+  // brisk enough that the corpse clears.
+  frameRate: { idle: 5, walk: 7, death: 14 },
+  // 128px cell, but the imp body only fills ~56px of it, so the scale must run
+  // large for the mini-boss to tower over the swarm around its 26px hitbox.
+  // 2.4 is the first eyeball pass; hitbox/aura/telegraph are unchanged.
+  scale: 2.4,
+};
+
 /** Every archetype with real art, keyed by `EnemyData.displayName`. */
 const ENEMY_ART: Record<string, EnemyArt> = {
   "Popup Grunt": POPUP_GRUNT,
   "Cookie Banner": COOKIE_BANNER,
   "Tracking Pixel": TRACKING_PIXEL,
   Paywall: PAYWALL,
+  "Autoplay Video Ogre": AUTOPLAY_OGRE,
 };
 
 /** The descriptor for an archetype, or `undefined` if it's still a primitive. */
