@@ -9,6 +9,7 @@ import {
   ensureEnemyAnims,
   getEnemyArt,
 } from "./enemy-sprite";
+import { type UiConstruct, createUiConstruct, isUiConstruct } from "./ui-construct";
 import { type Facing, facingXY } from "./player-sprite/facing";
 import type { Player } from "./player";
 
@@ -114,6 +115,17 @@ export class Enemy extends PooledSprite {
   private algo: AlgorithmVfx | undefined;
   private isBoss = false;
   /**
+   * The ad-side **procedural UI-construct** rig — the map's fourth render path
+   * (#80/#81), a glowing browser-chrome window assembled from the shared kit.
+   * Unlike the single-per-run boss, constructs come in swarms, so each pooled
+   * `Enemy` owns its own controller, lazily built on its first construct spawn
+   * and reused. `isConstruct` gates the branches, mirroring `isBoss` / `art`.
+   * Built for exactly one archetype today (the Popup Grunt); when #82+ add a
+   * second construct type this lazy-cache grows a per-type guard.
+   */
+  private construct: UiConstruct | undefined;
+  private isConstruct = false;
+  /**
    * The spawn "pop up" — a scale bounce from nothing to full, kept so a recycled
    * sprite kills a still-running pop before starting its own (and so death can
    * snap to full scale rather than freezing the body mid-grow).
@@ -208,19 +220,34 @@ export class Enemy extends PooledSprite {
     this.ring.setVisible(false);
 
     this.setPosition(x, y);
-    this.art = getEnemyArt(data.displayName);
+    this.isConstruct = isUiConstruct(data.displayName);
+    // A construct archetype renders procedurally, so it never carries spritesheet
+    // art; skip the registry lookup so the two paths can't both light up.
+    this.art = this.isConstruct ? undefined : getEnemyArt(data.displayName);
     this.isBoss = isAlgorithm(data.displayName);
-    if (this.isBoss) {
+    if (this.isConstruct) {
+      // Procedural UI-construct (#80/#81): no spritesheet, no tinted circle. The
+      // rig dresses this pooled sprite as its window screen and owns the frame /
+      // title-bar / close / glyphs / cursor around it; the identity tint is
+      // dropped like the art + boss paths (the kit owns its own palette). Lazily
+      // built per sprite and reused — safe while a single construct type exists.
+      this.algo?.hide();
+      this.construct ??= createUiConstruct(this.scene, data.displayName);
+      this.setScale(1).setTintMode(Phaser.TintModes.MULTIPLY).clearTint();
+      this.construct.spawn(this, x, y);
+    } else if (this.isBoss) {
       // Procedural VFX construct (#71): no spritesheet and no tinted circle. The
       // rig dresses this pooled sprite as its lens and owns the halo/shards/iris
       // around it; the identity tint is dropped like the art path (its colours
       // are its own). Built once, reused — a run has a single boss.
+      this.construct?.hide();
       this.algo ??= new AlgorithmVfx(this.scene);
       this.setScale(1).setTintMode(Phaser.TintModes.MULTIPLY).clearTint();
       this.algo.spawn(this, x, y);
     } else if (this.art) {
-      // A recycled boss coming back as an ordinary enemy leaves no rig showing.
+      // A recycled boss/construct coming back as an ordinary enemy leaves no rig.
       this.algo?.hide();
+      this.construct?.hide();
       // Real art: the sprite plays its own idle clip in full colour, so the
       // identity tint is dropped (a coloured sheet × a tint is mud — #60).
       this.artFacing = "down";
@@ -238,6 +265,7 @@ export class Enemy extends PooledSprite {
       });
     } else {
       this.algo?.hide();
+      this.construct?.hide();
       // One baked texture per archetype radius, not one scaled texture: scaling
       // a tiny circle up is how placeholder art ends up looking like a smudge.
       // `setScale(1)` undoes any art scale a recycled sprite is carrying.
@@ -327,7 +355,20 @@ export class Enemy extends PooledSprite {
     this.flash = Math.max(0, this.flash - delta * Enemy.FLASH_DECAY);
     this.refreshTint();
 
-    if (this.isBoss) {
+    if (this.isConstruct) {
+      // The construct animates from its own displacement (lunge + lean) and the
+      // hit-flash; the frozen chase behaviour above already moved it.
+      this.construct!.tick(
+        delta,
+        this.x,
+        this.y,
+        this.x - fromX,
+        this.y - fromY,
+        this.player.x,
+        this.player.y,
+        this.flash,
+      );
+    } else if (this.isBoss) {
       // The wind-up drives the boss's "about to fire" reaction — shards pull in,
       // the palette bleeds toward the telegraph orange — alongside the ring.
       const charge =
@@ -531,6 +572,7 @@ export class Enemy extends PooledSprite {
   override release(): void {
     this.ring.setVisible(false);
     this.algo?.hide();
+    this.construct?.hide();
     super.release();
   }
 
@@ -583,7 +625,19 @@ export class Enemy extends PooledSprite {
     this.events.onEnemyDamaged(this, amount);
 
     if (this.hp <= 0) {
-      if (this.isBoss) {
+      if (this.isConstruct) {
+        // The construct closes rather than plays a death clip: the window snaps
+        // shut. Like the boss/art paths the logic dies now (kill counted here),
+        // the sprite lingers for the close, and `dying` stops it acting until
+        // the controller hands it back to the pool.
+        this.dying = true;
+        this.ring.setVisible(false);
+        this.construct!.die(this.x, this.y, () => {
+          this.dying = false;
+          this.release();
+        });
+        this.events.onEnemyDied(this);
+      } else if (this.isBoss) {
         // The boss implodes rather than plays a death clip: like the art path,
         // the logic dies now (kill counted here) but the sprite lingers for the
         // implosion and only returns to the pool when it finishes. `dying` stops
@@ -630,9 +684,9 @@ export class Enemy extends PooledSprite {
     if (this.flash === this.tintedAt) return;
     this.tintedAt = this.flash;
 
-    if (this.isBoss) {
-      // The rig owns the boss's whole palette, including the hit-flash brighten
-      // it applies from `flash` in `tick`; the primitive colour-lerp below would
+    if (this.isBoss || this.isConstruct) {
+      // The rig owns its whole palette, including the hit-flash brighten it
+      // applies from `flash` in `tick`; the primitive colour-lerp below would
       // fight it, so there is nothing to do on this sprite's own tint.
       return;
     }
