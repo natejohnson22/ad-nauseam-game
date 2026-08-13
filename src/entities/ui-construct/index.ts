@@ -13,6 +13,7 @@ import Phaser from "phaser";
 import { CookieBannerVfx } from "./cookie-banner";
 import type { UiConstruct } from "./kit";
 import { PopupGruntVfx } from "./popup-grunt";
+import { TrackingPixelVfx } from "./tracking-pixel";
 
 export type { UiConstruct } from "./kit";
 export { UI } from "./kit";
@@ -21,6 +22,7 @@ export { UI } from "./kit";
 const CONSTRUCTS: Record<string, (scene: Phaser.Scene) => UiConstruct> = {
   "Popup Grunt": (scene) => new PopupGruntVfx(scene),
   "Cookie Banner": (scene) => new CookieBannerVfx(scene),
+  "Tracking Pixel": (scene) => new TrackingPixelVfx(scene),
 };
 
 /** True when this archetype's body is a procedural UI construct rather than a

@@ -314,6 +314,12 @@ export class Enemy extends PooledSprite {
         this.attackCd = behavior.interval;
         // Tight to the body — a muzzle flare, not a danger zone. The danger is
         // the shot that follows, and it is somewhere else a moment later.
+        //
+        // A UI construct's muzzle flare reads in the family's white glow rather
+        // than the shared danger orange (the Tracking Pixel's reticle body still
+        // bleeds toward orange on lock — the ring is the family chrome, the
+        // reticle carries the danger). Non-constructs on this arm — the boss —
+        // keep the orange telegraph grammar.
         this.ring
           .setTexture(
             ringTexture(
@@ -322,7 +328,7 @@ export class Enemy extends PooledSprite {
               Enemy.TELEGRAPH_THICKNESS,
             ),
           )
-          .setTint(Enemy.TELEGRAPH_COLOR);
+          .setTint(this.isConstruct ? UI.GLOW : Enemy.TELEGRAPH_COLOR);
         break;
     }
   }
@@ -359,8 +365,15 @@ export class Enemy extends PooledSprite {
     this.refreshTint();
 
     if (this.isConstruct) {
-      // The construct animates from its own displacement (lunge + lean) and the
-      // hit-flash; the frozen chase behaviour above already moved it.
+      // The construct animates from its own displacement (lunge + lean), the
+      // hit-flash, and — for the wind-up arms — the same attack charge the boss
+      // rig reads, so a locking-on reticle bleeds orange in step with the muzzle
+      // ring. Chase constructs never wind up, so charge stays 0 for them.
+      const charge =
+        this.attackState === "winding" &&
+        (behavior.kind === "ranged_standoff" || behavior.kind === "telegraph_aoe")
+          ? 1 - this.attackWind / Math.max(0.01, behavior.telegraph)
+          : 0;
       this.construct!.tick(
         delta,
         this.x,
@@ -370,6 +383,7 @@ export class Enemy extends PooledSprite {
         this.player.x,
         this.player.y,
         this.flash,
+        charge,
       );
     } else if (this.isBoss) {
       // The wind-up drives the boss's "about to fire" reaction — shards pull in,
