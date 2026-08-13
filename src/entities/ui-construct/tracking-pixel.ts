@@ -318,6 +318,14 @@ export class TrackingPixelVfx implements UiConstruct {
     this.setVisible(false);
   }
 
+  destroy(): void {
+    this.hide();
+    for (const b of this.brackets) b.destroy();
+    for (const tk of this.ticks) tk.destroy();
+    this.dot.destroy();
+    this.scan.destroy();
+  }
+
   private setVisible(v: boolean): void {
     for (const b of this.brackets) b.setVisible(v);
     for (const tk of this.ticks) tk.setVisible(v);

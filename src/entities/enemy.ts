@@ -119,11 +119,16 @@ export class Enemy extends PooledSprite {
    * (#80/#81), a glowing browser-chrome window assembled from the shared kit.
    * Unlike the single-per-run boss, constructs come in swarms, so each pooled
    * `Enemy` owns its own controller, lazily built on its first construct spawn
-   * and reused. `isConstruct` gates the branches, mirroring `isBoss` / `art`.
-   * Built for exactly one archetype today (the Popup Grunt); when #82+ add a
-   * second construct type this lazy-cache grows a per-type guard.
+   * and reused while the archetype stays the same. Recycled as a *different*
+   * construct type, the old rig is destroyed and a new one built — the per-type
+   * guard #81 left for #82+. `isConstruct` gates the branches, mirroring
+   * `isBoss` / `art`.
    */
   private construct: UiConstruct | undefined;
+  /** `displayName` the current `construct` was built for, or `undefined` while
+   *  none is held. Compared on spawn so a Popup Grunt sprite recycled as a
+   *  Paywall does not keep drawing the grunt. */
+  private constructKind: string | undefined;
   private isConstruct = false;
   /**
    * The spawn "pop up" — a scale bounce from nothing to full, kept so a recycled
@@ -230,11 +235,18 @@ export class Enemy extends PooledSprite {
       // rig dresses this pooled sprite as its window screen and owns the frame /
       // title-bar / close / glyphs / cursor around it; the identity tint is
       // dropped like the art + boss paths (the kit owns its own palette). Lazily
-      // built per sprite and reused — safe while a single construct type exists.
+      // built per sprite and reused while this sprite stays the same archetype;
+      // a type change tears the old rig down so a recycled grunt cannot spawn
+      // as a Paywall still drawing a popup.
       this.algo?.hide();
-      this.construct ??= createUiConstruct(this.scene, data.displayName);
+      if (this.constructKind !== data.displayName) {
+        this.construct?.hide();
+        this.construct?.destroy();
+        this.construct = createUiConstruct(this.scene, data.displayName);
+        this.constructKind = data.displayName;
+      }
       this.setScale(1).setTintMode(Phaser.TintModes.MULTIPLY).clearTint();
-      this.construct.spawn(this, x, y);
+      this.construct!.spawn(this, x, y);
     } else if (this.isBoss) {
       // Procedural VFX construct (#71): no spritesheet and no tinted circle. The
       // rig dresses this pooled sprite as its lens and owns the halo/shards/iris
