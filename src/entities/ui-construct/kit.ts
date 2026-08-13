@@ -206,6 +206,48 @@ export function bakeScanline(
   return key;
 }
 
+/** A filled **circle** — play-button backing, a scrubber knob, a rec-dot.
+ *  Tinted `FRAME`/`CYAN`/`GLOW` like the rest of the chrome. */
+export function bakeCircle(
+  scene: Phaser.Scene,
+  key: string,
+  radius: number,
+): string {
+  if (scene.textures.exists(key)) return key;
+  const d = Math.ceil(radius * 2);
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  g.fillStyle(0xffffff, 1);
+  g.fillCircle(d / 2, d / 2, radius);
+  g.generateTexture(key, d, d);
+  g.destroy();
+  return key;
+}
+
+/** A **play triangle** — the autoplay face (▶). Right-pointing, filled white so
+ *  the caller tints it. Optically shifted a hair right of centre so it reads
+ *  centred inside a circular backing. The Autoplay Ogre's star (#85). */
+export function bakePlayTriangle(
+  scene: Phaser.Scene,
+  key: string,
+  size: number,
+): string {
+  if (scene.textures.exists(key)) return key;
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  g.fillStyle(0xffffff, 1);
+  const inset = size * 0.18;
+  g.fillTriangle(
+    inset + size * 0.06,
+    inset,
+    inset + size * 0.06,
+    size - inset,
+    size - inset * 0.55,
+    size / 2,
+  );
+  g.generateTexture(key, size, size);
+  g.destroy();
+  return key;
+}
+
 /** A **padlock body** — a rounded-rect block with a small dark keyhole punched
  *  out of it (a notch + a slot). The lock face of a "Subscribe to continue"
  *  modal (the Paywall), and the core of the lockout projectile (#86). Tinted

@@ -10,6 +10,7 @@
  * from the same kit.
  */
 import Phaser from "phaser";
+import { AutoplayOgreVfx } from "./autoplay-ogre";
 import { CookieBannerVfx } from "./cookie-banner";
 import type { UiConstruct } from "./kit";
 import { PaywallVfx } from "./paywall";
@@ -25,6 +26,7 @@ const CONSTRUCTS: Record<string, (scene: Phaser.Scene) => UiConstruct> = {
   "Cookie Banner": (scene) => new CookieBannerVfx(scene),
   "Tracking Pixel": (scene) => new TrackingPixelVfx(scene),
   Paywall: (scene) => new PaywallVfx(scene),
+  "Autoplay Video Ogre": (scene) => new AutoplayOgreVfx(scene),
 };
 
 /** True when this archetype's body is a procedural UI construct rather than a
