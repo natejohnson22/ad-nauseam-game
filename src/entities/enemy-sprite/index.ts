@@ -21,10 +21,6 @@
 import Phaser from "phaser";
 import type { Facing } from "../player-sprite/facing";
 
-import popupGruntIdle from "./assets/popup-grunt/idle.png";
-import popupGruntWalk from "./assets/popup-grunt/walk.png";
-import popupGruntDeath from "./assets/popup-grunt/death.png";
-
 import cookieBannerIdle from "./assets/cookie-banner/idle.png";
 import cookieBannerWalk from "./assets/cookie-banner/walk.png";
 import cookieBannerDeath from "./assets/cookie-banner/death.png";
@@ -64,24 +60,6 @@ export interface EnemyArt {
   /** On-screen scale of the 64px cell — tuned so the body reads at its hitbox. */
   readonly scale: number;
 }
-
-/**
- * Popup Grunt — craftpix **Free Slime Mobs** (Aqua). 64×64, rows are
- * down/up/left/right (0/1/2/3); idle 6 / walk 8 / death 10 columns.
- */
-const POPUP_GRUNT: EnemyArt = {
-  key: "popup_grunt",
-  sheets: { idle: popupGruntIdle, walk: popupGruntWalk, death: popupGruntDeath },
-  frame: { width: 64, height: 64 },
-  cols: { idle: 6, walk: 8, death: 10 },
-  row: { down: 0, up: 1, left: 2, right: 3 },
-  // Idle breathes slowly; walk pushes the swarm; death is snappy so corpses
-  // don't linger under a wave.
-  frameRate: { idle: 6, walk: 10, death: 16 },
-  // The slime body fills ~40px of its 64px cell; ~0.96 keeps the blob reading
-  // clearly larger than its 26px hitbox (Nate eyeballed up 20% from 0.8).
-  scale: 0.96,
-};
 
 /**
  * Cookie Banner — craftpix **Free Top-Down Orc** family, the brown *ogre* body
@@ -193,7 +171,6 @@ const AUTOPLAY_OGRE: EnemyArt = {
 
 /** Every archetype with real art, keyed by `EnemyData.displayName`. */
 const ENEMY_ART: Record<string, EnemyArt> = {
-  "Popup Grunt": POPUP_GRUNT,
   "Cookie Banner": COOKIE_BANNER,
   "Tracking Pixel": TRACKING_PIXEL,
   Paywall: PAYWALL,
