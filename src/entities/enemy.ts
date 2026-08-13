@@ -314,6 +314,12 @@ export class Enemy extends PooledSprite {
         this.attackCd = behavior.interval;
         // Tight to the body — a muzzle flare, not a danger zone. The danger is
         // the shot that follows, and it is somewhere else a moment later.
+        //
+        // A UI construct's muzzle flare reads in the family's white glow rather
+        // than the shared danger orange (the Tracking Pixel's reticle body still
+        // bleeds toward orange on lock — the ring is the family chrome, the
+        // reticle carries the danger). Non-constructs on this arm — the boss —
+        // keep the orange telegraph grammar.
         this.ring
           .setTexture(
             ringTexture(
@@ -322,7 +328,7 @@ export class Enemy extends PooledSprite {
               Enemy.TELEGRAPH_THICKNESS,
             ),
           )
-          .setTint(Enemy.TELEGRAPH_COLOR);
+          .setTint(this.isConstruct ? UI.GLOW : Enemy.TELEGRAPH_COLOR);
         break;
     }
   }
