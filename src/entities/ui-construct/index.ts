@@ -10,14 +10,17 @@
  * from the same kit.
  */
 import Phaser from "phaser";
+import { CookieBannerVfx } from "./cookie-banner";
 import type { UiConstruct } from "./kit";
 import { PopupGruntVfx } from "./popup-grunt";
 
 export type { UiConstruct } from "./kit";
+export { UI } from "./kit";
 
 /** Which archetypes render as a UI construct, and the controller each uses. */
 const CONSTRUCTS: Record<string, (scene: Phaser.Scene) => UiConstruct> = {
   "Popup Grunt": (scene) => new PopupGruntVfx(scene),
+  "Cookie Banner": (scene) => new CookieBannerVfx(scene),
 };
 
 /** True when this archetype's body is a procedural UI construct rather than a

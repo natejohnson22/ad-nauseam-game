@@ -9,7 +9,7 @@ import {
   ensureEnemyAnims,
   getEnemyArt,
 } from "./enemy-sprite";
-import { type UiConstruct, createUiConstruct, isUiConstruct } from "./ui-construct";
+import { UI, type UiConstruct, createUiConstruct, isUiConstruct } from "./ui-construct";
 import { type Facing, facingXY } from "./player-sprite/facing";
 import type { Player } from "./player";
 
@@ -289,12 +289,15 @@ export class Enemy extends PooledSprite {
         break;
       case "chase_aura":
         // Standing, not telegraphing: the field is always there, so it is drawn
-        // in the enemy's own colour at low alpha rather than in danger-orange.
+        // at low alpha rather than in danger-orange. A UI construct (#80) drops
+        // its archetype identity colour for the cold family palette, so its
+        // drag-behind slow field reads as family chrome-blue, not the enemy's
+        // legacy brown; everything else keeps its own colour.
         this.ring.setTexture(
           ringTexture(this.scene, behavior.radius, Enemy.TELEGRAPH_THICKNESS),
         );
         this.ring
-          .setTint(this.archetype.color)
+          .setTint(this.isConstruct ? UI.FRAME : this.archetype.color)
           .setAlpha(Enemy.AURA_ALPHA)
           .setPosition(this.x, this.y)
           .setVisible(true);
