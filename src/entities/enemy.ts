@@ -359,8 +359,15 @@ export class Enemy extends PooledSprite {
     this.refreshTint();
 
     if (this.isConstruct) {
-      // The construct animates from its own displacement (lunge + lean) and the
-      // hit-flash; the frozen chase behaviour above already moved it.
+      // The construct animates from its own displacement (lunge + lean), the
+      // hit-flash, and — for the wind-up arms — the same attack charge the boss
+      // rig reads, so a locking-on reticle bleeds orange in step with the muzzle
+      // ring. Chase constructs never wind up, so charge stays 0 for them.
+      const charge =
+        this.attackState === "winding" &&
+        (behavior.kind === "ranged_standoff" || behavior.kind === "telegraph_aoe")
+          ? 1 - this.attackWind / Math.max(0.01, behavior.telegraph)
+          : 0;
       this.construct!.tick(
         delta,
         this.x,
@@ -370,6 +377,7 @@ export class Enemy extends PooledSprite {
         this.player.x,
         this.player.y,
         this.flash,
+        charge,
       );
     } else if (this.isBoss) {
       // The wind-up drives the boss's "about to fire" reaction — shards pull in,

@@ -124,6 +124,27 @@ export function bakeGlyphStrip(
   return key;
 }
 
+/** An **L corner bracket** — one arm along the top edge, one down the left,
+ *  meeting at the texture's top-left (0,0). Placed four-up and rotated
+ *  0/90/180/270 it frames a target reticle (the Tracking Pixel), or the chrome
+ *  corners of a modal. Origin the caller sets to (0,0) so the bracket pivots on
+ *  its corner point. Tinted `FRAME`/`CYAN`, ADD, it reads as backlit chrome. */
+export function bakeBracket(
+  scene: Phaser.Scene,
+  key: string,
+  arm: number,
+  thickness = 2,
+): string {
+  if (scene.textures.exists(key)) return key;
+  const g = scene.make.graphics({ x: 0, y: 0 }, false);
+  g.fillStyle(0xffffff, 1);
+  g.fillRect(0, 0, arm, thickness); // top arm, extends +x
+  g.fillRect(0, 0, thickness, arm); // left arm, extends +y
+  g.generateTexture(key, arm, arm);
+  g.destroy();
+  return key;
+}
+
 /** An **× mark** — the close button's glyph (two crossed strokes). */
 export function bakeCross(
   scene: Phaser.Scene,
@@ -211,7 +232,13 @@ export function piece(
 export interface UiConstruct {
   /** Dress the pooled base sprite and bring the rig up. */
   spawn(base: Phaser.GameObjects.Sprite, x: number, y: number): void;
-  /** Advance idle life and lay every piece out for this frame. */
+  /** Advance idle life and lay every piece out for this frame. `charge` 0..1 is
+   *  the shared attack wind-up (`Enemy.attackWind` over the behaviour's
+   *  telegraph, 0 when not winding) — the same signal the boss rig takes, so a
+   *  wind-up construct (the Tracking Pixel locking on, a Paywall/Ogre charging)
+   *  can bleed toward the telegraph orange in step with the muzzle ring. Chase
+   *  constructs (Popup Grunt, Cookie Banner) never wind up and simply omit it —
+   *  a shorter `tick` stays assignable to this interface. */
   tick(
     dt: number,
     x: number,
@@ -221,6 +248,7 @@ export interface UiConstruct {
     px: number,
     py: number,
     flash: number,
+    charge: number,
   ): void;
   /** Play the death (a window closing) then hand back to the pool via `done`. */
   die(x: number, y: number, done: () => void): void;
