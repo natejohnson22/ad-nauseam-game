@@ -10,19 +10,23 @@
  * frame — the classic infinite-scroll-ground trick. One draw call, no seams, no
  * streaming, genuinely infinite.
  *
- * The texture is a pre-composed **seamless super-tile** (256×256, ~8×8 of a
- * 32px ground tile) rather than a single tile, so the repeat reads as an
- * organic cobble field instead of an obvious grid. It sits at depth -10, below
- * every entity (the player logic centre is depth 0) and above the scene's clear
+ * The texture is a pre-composed **seamless super-tile** (1024×1024, a 64×64 of
+ * the pack's 16px grass fill) rather than a single tile, so the repeat reads
+ * as a field instead of an obvious grid. It sits at depth -10, below every
+ * entity (the player logic centre is depth 0) and above the scene's clear
  * colour. World-dressing and parallax are deferred (issue #61).
  *
  * Follows the #60 dual-path art contract: a full-colour sheet on the art path
  * (no identity tint), loaded via this module's own `preload`, exactly as
  * `player-sprite` does.
  *
- * Asset: `assets/ground.png` is a self-authored, licence-clean placeholder
- * seamless stone-ground bed; the research pick (Cainos "Pixel Art Top Down –
- * Basic", #58) can drop in as a same-sized swap without touching this wiring.
+ * Asset: `assets/ground.png` is a composed bed from CraftPix "Grassland Top
+ * Down Tileset Pixel Art" (product 189510) — the #87 / #88 pick. Flat
+ * yellow-green fill, sparse Details.png tufts/pebbles/flowers, and a few
+ * wrap-stamped trees and bushes from Objects_separated.
+ * Licence: https://craftpix.net/file-licenses/ (premium/paid) — commercial-OK,
+ * no attribution required, no reselling loose source, no AI-training. Same
+ * house as the swordsman. Wiring unchanged from #63.
  */
 import Phaser from "phaser";
 import groundUrl from "./assets/ground.png";
