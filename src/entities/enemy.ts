@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import type { EnemyBehavior, EnemyData } from "../content/types";
 import { PooledSprite } from "../core/pool";
 import { circleTexture, ringTexture } from "../core/textures";
+import { AlgorithmVfx, isAlgorithm } from "./algorithm-vfx";
 import {
   type EnemyArt,
   enemyAnimKey,
@@ -105,6 +106,14 @@ export class Enemy extends PooledSprite {
   /** Which way the body faces, driven by its per-frame movement. */
   private artFacing: Facing = "down";
   /**
+   * The Algorithm's procedural VFX rig — the map's **third render path** (#71).
+   * Set only while this sprite is the boss; the rig is lazily built on the first
+   * boss spawn and reused, since a run holds exactly one. `isBoss` gates the
+   * boss branches the same way `art` gates the spritesheet ones.
+   */
+  private algo: AlgorithmVfx | undefined;
+  private isBoss = false;
+  /**
    * The spawn "pop up" — a scale bounce from nothing to full, kept so a recycled
    * sprite kills a still-running pop before starting its own (and so death can
    * snap to full scale rather than freezing the body mid-grow).
@@ -200,7 +209,18 @@ export class Enemy extends PooledSprite {
 
     this.setPosition(x, y);
     this.art = getEnemyArt(data.displayName);
-    if (this.art) {
+    this.isBoss = isAlgorithm(data.displayName);
+    if (this.isBoss) {
+      // Procedural VFX construct (#71): no spritesheet and no tinted circle. The
+      // rig dresses this pooled sprite as its lens and owns the halo/shards/iris
+      // around it; the identity tint is dropped like the art path (its colours
+      // are its own). Built once, reused — a run has a single boss.
+      this.algo ??= new AlgorithmVfx(this.scene);
+      this.setScale(1).setTintMode(Phaser.TintModes.MULTIPLY).clearTint();
+      this.algo.spawn(this, x, y);
+    } else if (this.art) {
+      // A recycled boss coming back as an ordinary enemy leaves no rig showing.
+      this.algo?.hide();
       // Real art: the sprite plays its own idle clip in full colour, so the
       // identity tint is dropped (a coloured sheet × a tint is mud — #60).
       this.artFacing = "down";
@@ -217,6 +237,7 @@ export class Enemy extends PooledSprite {
         ease: "Back.easeOut",
       });
     } else {
+      this.algo?.hide();
       // One baked texture per archetype radius, not one scaled texture: scaling
       // a tiny circle up is how placeholder art ends up looking like a smudge.
       // `setScale(1)` undoes any art scale a recycled sprite is carrying.
@@ -306,7 +327,25 @@ export class Enemy extends PooledSprite {
     this.flash = Math.max(0, this.flash - delta * Enemy.FLASH_DECAY);
     this.refreshTint();
 
-    if (this.art) this.updateArtPose(this.x - fromX, this.y - fromY);
+    if (this.isBoss) {
+      // The wind-up drives the boss's "about to fire" reaction — shards pull in,
+      // the palette bleeds toward the telegraph orange — alongside the ring.
+      const charge =
+        this.attackState === "winding" && behavior.kind === "ranged_standoff"
+          ? 1 - this.attackWind / Math.max(0.01, behavior.telegraph)
+          : 0;
+      this.algo!.tick(
+        delta,
+        this.x,
+        this.y,
+        this.player.x,
+        this.player.y,
+        charge,
+        this.flash,
+      );
+    } else if (this.art) {
+      this.updateArtPose(this.x - fromX, this.y - fromY);
+    }
   }
 
   /**
@@ -487,9 +526,11 @@ export class Enemy extends PooledSprite {
     if (d <= behavior.radius) this.player.takeDamage(behavior.damage);
   }
 
-  /** Takes the ring with it — the pool only knows about the sprite itself. */
+  /** Takes the ring (and the boss rig) with it — the pool only knows about the
+   *  sprite itself. */
   override release(): void {
     this.ring.setVisible(false);
+    this.algo?.hide();
     super.release();
   }
 
@@ -542,7 +583,19 @@ export class Enemy extends PooledSprite {
     this.events.onEnemyDamaged(this, amount);
 
     if (this.hp <= 0) {
-      if (this.art) {
+      if (this.isBoss) {
+        // The boss implodes rather than plays a death clip: like the art path,
+        // the logic dies now (kill counted here) but the sprite lingers for the
+        // implosion and only returns to the pool when it finishes. `dying` stops
+        // it acting in the meantime.
+        this.dying = true;
+        this.ring.setVisible(false);
+        this.algo!.die(this.x, this.y, () => {
+          this.dying = false;
+          this.release();
+        });
+        this.events.onEnemyDied(this);
+      } else if (this.art) {
         // The logic dies now — kill counted, engagement dropped at this spot —
         // but the sprite lingers to play its death clip and only releases on the
         // clip's completion (the constructor's ANIMATION_COMPLETE). `dying`
@@ -576,6 +629,13 @@ export class Enemy extends PooledSprite {
   private refreshTint(): void {
     if (this.flash === this.tintedAt) return;
     this.tintedAt = this.flash;
+
+    if (this.isBoss) {
+      // The rig owns the boss's whole palette, including the hit-flash brighten
+      // it applies from `flash` in `tick`; the primitive colour-lerp below would
+      // fight it, so there is nothing to do on this sprite's own tint.
+      return;
+    }
 
     if (this.art) {
       // A coloured sheet can't be lerped toward white by a multiply tint, so
