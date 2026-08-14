@@ -9,7 +9,7 @@ export default defineConfig({
      The one exception is the Capacitor build: a webview serves from its own
      root, so `pnpm build:native` passes `--base=./` on the CLI. That is a
      separate script producing a separate artifact, not a branch inside dev. */
-  base: "/ad-nauseum-game/",
+  base: "/ad-nauseam-game/",
   test: {
     environment: "node",
   },
