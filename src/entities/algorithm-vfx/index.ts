@@ -18,8 +18,16 @@
  * halo, rune ring, orbiting shards, iris, pupil) are sibling GameObjects this
  * module owns and positions each frame around the core, exactly as `Enemy`
  * carries its telegraph `ring` as a sibling.
+ *
+ * **Palette discipline (issue #94).** The boss donated its colours to the shared
+ * UI-construct kit when that was extracted (#81); it now **imports them back**
+ * from `ui-construct/kit` rather than owning a private copy, so it can no longer
+ * drift from the family it seeded. It stays deliberately the *abstract* one —
+ * the engine the windows come out of, not a sixth window — so this is a palette
+ * pass only: no chrome, no shape change (map #80 rules the core redesign out).
  */
 import Phaser from "phaser";
+import { UI, mixTint } from "../ui-construct/kit";
 
 /** Marks the archetype whose body is this procedural rig, keyed like the art
  *  registry so `content/` stays free of render concerns. */
@@ -49,15 +57,25 @@ const ORBIT_IDLE = 120; // resting orbit radius of the shards
 const ORBIT_CHARGED = 82; // pulled in as a shot winds up
 const MAX_LOOK = 13; // how far the iris slides toward the player
 
-// Palette. Cold screen-white and cyan for "the feed", danger-orange (the shared
-// telegraph colour, 0xff591a) bled in as it charges, so body and ring agree.
-const CORE_TINT = 0xdfe7f5;
-const HALO_TINT = 0x4aa3ff;
-const RING_TINT = 0x8fd0ff;
-const IRIS_TINT = 0x141b2b;
-const PUPIL_TINT = 0x9fe8ff;
-const SHARD_TINT = 0xc4e8ff;
-const CHARGE_TINT = 0xff7a2a;
+// Palette — **sourced from the shared family kit, not owned here** (issue #94).
+// The Algorithm's colours became `UI` when the kit was extracted (#81); it now
+// imports them back, so the boss cannot drift from the family it seeded. Four of
+// these were hardcoded near-misses before the pass; the mapping is the whole of
+// the boss's palette, and every value below is a `UI` member — no private hex.
+const CORE_TINT = UI.GLOW;
+const HALO_TINT = UI.FRAME;
+const RING_TINT = UI.CYAN;
+/** The dark iris is literally a screen — `SCREEN` is what that colour means. */
+const IRIS_TINT = UI.SCREEN;
+const PUPIL_TINT = UI.CYAN;
+/** Shards are data calved off the lens, so they share the lens's exact material.
+ *  `GLOW` (not `CYAN`) keeps the depth ladder: halo `FRAME` < ring `CYAN` <
+ *  shards + core `GLOW`. Snapping them to `CYAN` would collapse them into the
+ *  rune ring. */
+const SHARD_TINT = UI.GLOW;
+/** `UI.ALERT` *is* `Enemy.TELEGRAPH_COLOR` — so the charging body and the boss's
+ *  own telegraph ring finally agree, which the old 0xff7a2a only claimed to. */
+const CHARGE_TINT = UI.ALERT;
 
 // Depths, threaded around the core's 2 and the telegraph ring's 2.5.
 const DEPTH_HALO = 1.78;
@@ -349,15 +367,4 @@ export class AlgorithmVfx {
     this.pupil.setVisible(v);
     for (const s of this.shards) s.setVisible(v);
   }
-}
-
-/** Lerp one packed 0xRRGGBB toward another by `t`, channel-wise. */
-function mixTint(from: number, to: number, t: number): number {
-  const k = Phaser.Math.Clamp(t, 0, 1);
-  const lerp = (shift: number): number => {
-    const a = (from >> shift) & 0xff;
-    const b = (to >> shift) & 0xff;
-    return Math.round(a + (b - a) * k) & 0xff;
-  };
-  return (lerp(16) << 16) | (lerp(8) << 8) | lerp(0);
 }
