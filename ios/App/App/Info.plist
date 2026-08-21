@@ -63,5 +63,23 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- AdMob (issue: AdMob+RevenueCat revive). Placeholder app ID — Google's
+	     published iOS test app ID, matches src/services/monetization-config.ts.
+	     TODO(real ID): swap for the real AdMob iOS app ID once it exists. -->
+	<key>GADIsAdManagerApp</key>
+	<true/>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-3940256099942544~1458002511</string>
+	<!-- Google's own AdMob attribution network — the one entry the base SDK
+	     needs; mediation networks would each add their own. -->
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+	</array>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>This identifier is used to show you more relevant ads.</string>
 </dict>
 </plist>

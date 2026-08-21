@@ -11,8 +11,9 @@
  * Three of the five states are event-driven off the real game rather than a
  * timer of the sprite's own: `weaponFired` plays the attack facing the cleave's
  * actual aim (so the swing and the pose can never drift), `playerHurt` plays a
- * flinch, and `playerDied` plays the collapse. The sprite hears only the bus,
- * so it stays decoupled from `WeaponManager` and `Player`.
+ * flinch, and `playerDied` plays the collapse. `playerRevived` is the one event
+ * that unlatches death so a paid continue can idle/run again. The sprite hears
+ * only the bus, so it stays decoupled from `WeaponManager` and `Player`.
  *
  * Asset: craftpix.net free top-down swordsman (lvl1). Each sheet is a 64x64
  * grid, 4 rows = 4 facings (row 0 down, 1 left, 2 right, 3 up), N columns of
@@ -81,7 +82,7 @@ export class PlayerSprite extends Phaser.GameObjects.Sprite {
   /** True while the one-shot hurt flinch plays — same deal as `attacking`. */
   private hurting = false;
   /** Latches on `playerDied`: the collapse plays once and holds its last frame,
-   *  and nothing (move, attack, hurt) poses over it again for the run. */
+   *  and nothing (move, attack, hurt) poses over it until `playerRevived`. */
   private dead = false;
 
   /** Kept so `destroy` can unsubscribe the exact handlers it registered. */
@@ -92,6 +93,8 @@ export class PlayerSprite extends Phaser.GameObjects.Sprite {
   ) => void;
   private readonly onHurt: () => void;
   private readonly onDied: () => void;
+  private readonly onRevived: (iframeSeconds: number) => void;
+  private iframeTween: Phaser.Tweens.Tween | undefined;
 
   /** Load every sheet. Call from a scene `preload`. */
   static preload(scene: Phaser.Scene): void {
@@ -155,12 +158,26 @@ export class PlayerSprite extends Phaser.GameObjects.Sprite {
     this.onDied = (): void => {
       if (this.dead) return;
       this.dead = true;
+      this.stopIframeBlink();
       this.play(`${DEATH}_${this.facing}`);
+    };
+    // A granted revive is the one thing allowed to stand the body back up —
+    // interrupt the collapse (or its held last frame) and hand posing back
+    // to `tick`. Idle here rather than waiting for the next move vector: the
+    // scene may still be paused on a leftover level-up when this fires.
+    this.onRevived = (iframeSeconds): void => {
+      if (!this.dead) return;
+      this.dead = false;
+      this.attacking = false;
+      this.hurting = false;
+      this.play(`${IDLE}_${this.facing}`);
+      this.startIframeBlink(iframeSeconds);
     };
 
     bus.on("weaponFired", this.onWeaponFired);
     bus.on("playerHurt", this.onHurt);
     bus.on("playerDied", this.onDied);
+    bus.on("playerRevived", this.onRevived);
   }
 
   /** Mirror the player and pick a pose. `move` is the frame's move vector. */
@@ -175,12 +192,36 @@ export class PlayerSprite extends Phaser.GameObjects.Sprite {
     this.play(`${moving ? RUN : IDLE}_${this.facing}`, true);
   }
 
+  /** Blink for the continue grace window so the i-frames are readable. */
+  private startIframeBlink(seconds: number): void {
+    this.stopIframeBlink();
+    if (seconds <= 0) return;
+    const cycle = 0.2;
+    const repeats = Math.max(0, Math.round(seconds / cycle) - 1);
+    this.iframeTween = this.scene.tweens.add({
+      targets: this,
+      alpha: 0.4,
+      duration: (cycle / 2) * 1000,
+      yoyo: true,
+      repeat: repeats,
+      onComplete: () => this.setAlpha(1),
+    });
+  }
+
+  private stopIframeBlink(): void {
+    this.iframeTween?.stop();
+    this.iframeTween = undefined;
+    this.setAlpha(1);
+  }
+
   override destroy(fromScene?: boolean): void {
     // The bus outlives nothing past the run, but drop the listeners explicitly
     // so a torn-down sprite never poses on a stray late emit.
+    this.stopIframeBlink();
     this.bus.off("weaponFired", this.onWeaponFired);
     this.bus.off("playerHurt", this.onHurt);
     this.bus.off("playerDied", this.onDied);
+    this.bus.off("playerRevived", this.onRevived);
     super.destroy(fromScene);
   }
 }

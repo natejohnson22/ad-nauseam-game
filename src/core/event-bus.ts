@@ -63,6 +63,14 @@ export interface GameEventMap {
    */
   playerHurt: [];
   playerDied: [];
+  /**
+   * A granted revive brought the player back. Distinct from `healthChanged`,
+   * which also fires on heals: this one means the collapse is over and the
+   * swordsman may pose again. `PlayerSprite` latches `dead` on `playerDied`
+   * and only this event clears it. Carries the continue i-frame duration so
+   * the sprite can blink for the same window `takeDamage` ignores.
+   */
+  playerRevived: [iframeSeconds: number];
   xpChanged: [current: number, needed: number, level: number];
   leveledUp: [choices: readonly Upgrade[]];
   timeChanged: [secondsLeft: number];

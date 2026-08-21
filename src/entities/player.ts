@@ -21,6 +21,19 @@ export class Player extends Phaser.GameObjects.Sprite {
   static readonly MAX_HP = 1000;
   static readonly BASE_SPEED = 220;
   static readonly RADIUS = 16;
+  /** Fraction of max HP a successful revive (ad watched / IAP bought) restores. */
+  static readonly REVIVE_HP_FRACTION = 0.5;
+  /**
+   * Scene-time invulnerability after a granted continue. Death is almost
+   * always in contact range, and overlapping enemies (plus any shot frozen
+   * on the body) would otherwise dump their next hit on the first unpaused
+   * frame — a completed purchase that never actually continues.
+   *
+   * 2s covers the synced contact wave (CDs freeze for the death beat, then
+   * all fire together at `contactInterval` ~0.6s) and enough travel at
+   * BASE_SPEED to walk out of a pile.
+   */
+  static readonly REVIVE_IFRAME_SECONDS = 2;
   private static readonly PIP_RADIUS = 4;
   private static readonly COLOR = 0x40ccff;
 
@@ -46,15 +59,19 @@ export class Player extends Phaser.GameObjects.Sprite {
   /**
    * Damage is ignored while this is set.
    *
-   * Set today only by the playtest harness (issue #30), which needs a phase's
+   * Set today by the playtest harness (issue #30), which needs a phase's
    * spawn pressure to be *watchable* — the Panic phase cannot be judged from
    * the ad break. It is a plain field rather than a debug branch because it is
    * not only a debug idea: i-frames are on the list of survivability upgrades
-   * the pool ticket has to design, and that is this same flag on a timer.
+   * the pool ticket has to design, and that is this same flag. Revive uses a
+   * separate timer (`iFrameLeft`) so expiring continue-grace cannot clear
+   * a harness toggle.
    */
   invulnerable = false;
 
   private alive = true;
+  /** Scene-seconds of post-revive grace. See `REVIVE_IFRAME_SECONDS`. */
+  private iFrameLeft = 0;
   /**
    * This frame's slow field, as a multiplier — the Cookie Banner's aura
    * (issue #31). Rebuilt every frame from scratch: enemies push into it during
@@ -127,12 +144,12 @@ export class Player extends Phaser.GameObjects.Sprite {
   /**
    * Take the player's weapons away for `seconds` — the Paywall's lockout.
    *
-   * Ignored while invulnerable, so the playtest harness's `i` really does mean
-   * "nothing the enemies do lands on me" rather than "no damage, but still
-   * disarmed" (issue #30).
+   * Ignored while invulnerable (harness or continue i-frames), so god-mode
+   * and a granted revive both mean "nothing the enemies do lands on me"
+   * rather than "no damage, but still disarmed" (issue #30).
    */
   silence(seconds: number): void {
-    if (!this.alive || this.invulnerable) return;
+    if (!this.alive || this.ignoringHits) return;
     this.silenceLeft = Math.max(this.silenceLeft, seconds);
   }
 
@@ -141,9 +158,15 @@ export class Player extends Phaser.GameObjects.Sprite {
     return this.silenceLeft > 0;
   }
 
+  /** Harness god-mode *or* the continue grace window. */
+  private get ignoringHits(): boolean {
+    return this.invulnerable || this.iFrameLeft > 0;
+  }
+
   tick(delta: number): void {
     if (!this.alive) return;
 
+    this.iFrameLeft = Math.max(0, this.iFrameLeft - delta);
     this.silenceLeft = Math.max(0, this.silenceLeft - delta);
 
     // Regen (issue #43). Guarded on being below the ceiling so a topped-up run
@@ -173,7 +196,7 @@ export class Player extends Phaser.GameObjects.Sprite {
   }
 
   takeDamage(amount: number): void {
-    if (!this.alive || this.invulnerable) return;
+    if (!this.alive || this.ignoringHits) return;
     // Damage Reduction is applied here, at the one choke every source of damage
     // already passes through (issue #43) — so it covers contact, blasts, and
     // shots without any of them knowing it exists.
@@ -194,6 +217,19 @@ export class Player extends Phaser.GameObjects.Sprite {
     if (!this.alive) return;
     this.hp = Math.min(this.maxHp, this.hp + amount);
     this.bus.emit("healthChanged", this.hp, this.maxHp);
+  }
+
+  /** Bring the player back after a revive ad/purchase — the one path allowed
+      to flip `alive` back on, unlike `heal`, which deliberately no-ops dead. */
+  revive(): void {
+    this.alive = true;
+    this.hp = Math.max(1, Math.round(this.maxHp * Player.REVIVE_HP_FRACTION));
+    this.iFrameLeft = Player.REVIVE_IFRAME_SECONDS;
+    this.pip.setVisible(false);
+    this.bus.emit("healthChanged", this.hp, this.maxHp);
+    // The swordsman latches `dead` on `playerDied` and will not idle/run/attack
+    // again until it hears this — HP alone leaves the collapse pose stuck on.
+    this.bus.emit("playerRevived", Player.REVIVE_IFRAME_SECONDS);
   }
 
   /**

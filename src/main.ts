@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { GameScene } from "./scenes/game-scene";
 import { HudScene } from "./scenes/hud-scene";
+import { initMonetization } from "./services/monetization";
 
 /* Matches the Godot project's viewport (project.godot: 1280x720, stretch
    "canvas_items" / aspect "expand"). FIT + CENTER_BOTH is the closest Phaser
@@ -34,6 +35,10 @@ const game = new Phaser.Game({
      with that run's bus. */
   scene: [GameScene, HudScene],
 });
+
+// SDK init is app-wide and idempotent, unlike the per-run bus/overlay `create`
+// builds — one call here, not one per restart.
+void initMonetization();
 
 /* Dev-only handle for slice 1's verification method. The agent preview browser
    never fires requestAnimationFrame — `document.hidden` is permanently true, so

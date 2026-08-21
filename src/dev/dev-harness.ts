@@ -97,6 +97,7 @@ export class DevHarness {
       faster: key(codes.CLOSED_BRACKET),
       invuln: key(codes.I),
       panel: key(codes.BACKTICK),
+      kill: key(codes.K),
     };
 
     this.panel = document.createElement("pre");
@@ -167,6 +168,12 @@ export class DevHarness {
     // Hidden rather than destroyed — for the screenshots where it is in the way.
     if (pressed(this.keys.panel))
       this.panel.style.display = this.panel.style.display === "none" ? "" : "none";
+    // Instant death, for exercising the revive offer without playing a run
+    // into the ground first. Routed through `takeDamage` rather than a debug
+    // branch on `Player`, so it is exactly the same death `playerDied` fires
+    // from — invulnerable still blocks it, same as any other hit.
+    if (pressed(this.keys.kill))
+      this.targets.player.takeDamage(this.targets.player.hp);
   }
 
   /**
@@ -218,7 +225,7 @@ export class DevHarness {
       ),
       `live  ${liveEnemies()} enemies   ` +
         `hp ${player.hp}${player.invulnerable ? " (INVULN)" : ""}`,
-      `keys  [ ] speed ${this.timeScale}x    i invuln    \` hide`,
+      `keys  [ ] speed ${this.timeScale}x    i invuln    k kill    \` hide`,
     ];
 
     if (this.config.problems.length > 0)
@@ -253,7 +260,7 @@ export interface HarnessTargets {
   readonly grantPicks: (n: number) => void;
 }
 
-type Binding = "slower" | "faster" | "invuln" | "panel";
+type Binding = "slower" | "faster" | "invuln" | "panel" | "kill";
 
 /** `HudScene`'s `formatClock`, duplicated rather than exported: this one shows
     a run that is 30 minutes long, and it is dev-only code that must not become

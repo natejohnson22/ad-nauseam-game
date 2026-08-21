@@ -4,4 +4,8 @@
     <string name="title_activity_main">Ad Nauseum</string>
     <string name="package_name">com.natejohnson.adnauseum</string>
     <string name="custom_url_scheme">com.natejohnson.adnauseum</string>
+    <!-- Placeholder — Google's published Android test app ID, matches
+         src/services/monetization-config.ts. TODO(real ID): swap for the
+         real AdMob Android app ID once it exists. -->
+    <string name="admob_app_id">ca-app-pub-3940256099942544~3347511713</string>
 </resources>

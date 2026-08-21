@@ -25,9 +25,11 @@ import { Progression } from "../systems/progression";
 import { Run, type RunOutcome } from "../systems/run";
 import { SpawnDirector } from "../systems/spawn-director";
 import { WeaponManager } from "../systems/weapon-manager";
+import { ads, monetizationSupported } from "../services/monetization";
 import { AdBreak } from "../ui/ad-break";
 import { LevelUpModal } from "../ui/level-up-modal";
 import { Overlay } from "../ui/overlay";
+import { ReviveOffer } from "../ui/revive-offer";
 import { WinScreen } from "../ui/win-screen";
 import { HudScene } from "./hud-scene";
 
@@ -68,6 +70,7 @@ export class GameScene extends Phaser.Scene {
   private levelUpModal!: LevelUpModal;
   private winScreen!: WinScreen;
   private adBreak!: AdBreak;
+  private reviveOffer!: ReviveOffer;
   /**
    * Whether the boss bar was showing last frame, so its hide (#51) fires exactly
    * once when the boss leaves rather than every frame after.
@@ -91,15 +94,24 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * The death beat (issue #52): true for the ~0.8s between the killing blow and
-   * the ad-break, while the swordsman's collapse plays. The world is frozen
+   * the revive offer, while the swordsman's collapse plays. The world is frozen
    * (`update` bails on it) but the scene keeps running, so the death clip — and
-   * only it — animates before "GAME OVER" covers the arena. Reset in `create`
-   * because Phaser reuses this Scene instance across a restart, so a field left
-   * `true` would freeze the *next* run.
+   * only it — animates before CONTINUE (or "GAME OVER" on web) covers the arena.
+   * Reset in `create` because Phaser reuses this Scene instance across a restart,
+   * so a field left `true` would freeze the *next* run.
    */
   private dying = false;
-  /** How long the collapse gets before the ad-break lands — see `dying`. */
+  /** How long the collapse gets before the revive offer lands — see `dying`. */
   private static readonly DEATH_BEAT_MS = 800;
+  /** Scene timer for the death beat. Cancelled if a win/timeout latches first. */
+  private deathBeat: Phaser.Time.TimerEvent | undefined;
+  /**
+   * A level-up that fired on the death frame (or that death interrupted).
+   * Held across the revive offer so a granted continue still gets the pick
+   * instead of dropping it, and so `openLevelUp` does not pause the scene
+   * out from under the death-beat timer.
+   */
+  private pendingLevelUp: readonly Upgrade[] | null = null;
 
   constructor() {
     super(GameScene.KEY);
@@ -139,6 +151,8 @@ export class GameScene extends Phaser.Scene {
     // Phaser reuses this Scene instance across a restart, so per-run flags must
     // be re-seeded here rather than trusted to their field initialisers.
     this.dying = false;
+    this.deathBeat = undefined;
+    this.pendingLevelUp = null;
 
     // One bus per run: a bus that outlives the run leaks listeners across the
     // restart boundary into the next one.
@@ -233,10 +247,11 @@ export class GameScene extends Phaser.Scene {
     this.levelUpModal = new LevelUpModal(this.overlay);
     this.winScreen = new WinScreen(this.overlay);
     this.adBreak = new AdBreak(this.overlay);
+    this.reviveOffer = new ReviveOffer(this.overlay);
 
     this.bus.on("leveledUp", (choices) => this.openLevelUp(choices));
-    this.bus.on("playerDied", () => this.run.end("died"));
-    this.bus.on("runEnded", (outcome) => this.endRun(outcome));
+    this.bus.on("playerDied", () => this.handlePlayerDeath());
+    this.bus.on("runEnded", (outcome) => void this.endRun(outcome));
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.bus.destroy();
@@ -244,6 +259,7 @@ export class GameScene extends Phaser.Scene {
       this.winScreen.hide();
       // Also stops the countdown's interval, which nothing else would.
       this.adBreak.hide();
+      this.reviveOffer.hide();
       this.overlay.destroy();
       this.scene.stop(HudScene.KEY);
     });
@@ -390,9 +406,14 @@ export class GameScene extends Phaser.Scene {
     if (enemy.archetype === ENEMIES.the_algorithm) this.run.defeatBoss();
   }
 
-  onEngagementCollected(value: number): void {
-    if (this.run.isOver) return;
+  onEngagementCollected(value: number): boolean {
+    // Refusing leaves the gem: `Engagement.tick` only `release()`s on true.
+    // Dead / dying is the continue case — vacuuming on the killing-blow
+    // frame would emit `leveledUp` after `playerDied` has already queued
+    // the revive timer. `isOver` is the timeout/win case, same rule.
+    if (this.run.isOver || this.dying || !this.player.isAlive) return false;
     this.progression.addEngagement(value);
+    return true;
   }
 
   /**
@@ -410,9 +431,17 @@ export class GameScene extends Phaser.Scene {
    */
   private openLevelUp(choices: readonly Upgrade[]): void {
     if (choices.length === 0 || this.run.isOver) return;
-    this.scene.pause();
+    // Stash even when dying: a floor-pick from `progression.tick` can land
+    // on the same frame as the killing blow, *before* `dying` is set. Death
+    // hides the modal; a granted revive reopens it from this stash.
+    this.pendingLevelUp = choices;
+    if (this.dying) return;
+    // Already paused on the revive overlay — don't pause again (Phaser warns)
+    // when a stashed pick is handed back from `reviveAndResume`.
+    if (!this.scene.isPaused()) this.scene.pause();
     this.bus.emit("inputEnabled", false);
     this.levelUpModal.show(choices, (upgrade) => {
+      this.pendingLevelUp = null;
       this.progression.applyUpgrade(upgrade);
       this.levelUpModal.hide();
       this.bus.emit("inputEnabled", true);
@@ -446,7 +475,7 @@ export class GameScene extends Phaser.Scene {
    * rather than showing an empty modal.
    */
   private showNextDevPick(): void {
-    if (this.pendingDevPicks <= 0 || this.run.isOver) return;
+    if (this.pendingDevPicks <= 0 || this.run.isOver || this.dying) return;
     this.pendingDevPicks -= 1;
 
     const choices = this.progression.grantPick();
@@ -470,49 +499,121 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
+   * The killing blow, before the run latches over: hold the death beat (issue
+   * #52), then offer a revive instead of ending things outright.
+   *
+   * `Run.end("died")` — the actual latch — is deliberately deferred out of
+   * this path entirely. It only runs once the offer is declined or
+   * unavailable (`resolveDeath`), so a granted revive never touches `Run` at
+   * all: the clock, kill count, and damage tally simply never stopped being
+   * live, because the run was never marked over.
+   */
+  private handlePlayerDeath(): void {
+    // A timeout or boss-kill can latch `endRun` earlier in this same frame
+    // (`run.tick` / `onEnemyDied`); leftover contact then still emits
+    // `playerDied`. Offering a continue on top of a locked ending — and
+    // resuming into a stopped director — is the bug this guard closes.
+    if (this.run.isOver || this.dying) return;
+    this.dying = true;
+    // Drop any live cleave first: a sword swing is a 0.18s flicker, and one
+    // caught by the freeze would hang as a green wedge over the collapse for
+    // the whole beat. The rest of the world holding still reads as drama; a
+    // frozen VFX reads as a bug.
+    this.swings.each((swing) => swing.release());
+    // A same-frame level-up already paused us and put a pick over the
+    // corpse. Hide it (choices live on `pendingLevelUp`) and resume so the
+    // collapse and this timer actually run — a paused GameScene clock
+    // never fires `delayedCall`.
+    this.levelUpModal.hide();
+    if (this.scene.isPaused()) this.scene.resume();
+    this.deathBeat = this.time.delayedCall(GameScene.DEATH_BEAT_MS, () =>
+      this.resolveDeath(),
+    );
+  }
+
+  /**
+   * The death beat has played out — pause and either offer a revive or let
+   * the run end. This only gates on monetization having anything to offer
+   * at all (the deployed web build does not).
+   */
+  private resolveDeath(): void {
+    this.deathBeat = undefined;
+    // Win/timeout may have latched during the beat (boss died on the same
+    // frame, timer cancelled too late, etc.). Don't stack CONTINUE on it.
+    if (this.run.isOver) return;
+    this.scene.pause();
+    this.bus.emit("inputEnabled", false);
+
+    if (!monetizationSupported()) {
+      this.run.end("died");
+      return;
+    }
+
+    this.reviveOffer.show(this.run.stats, {
+      onRevive: () => this.reviveAndResume(),
+      onDecline: () => this.run.end("died"),
+    });
+  }
+
+  /** The offer paid off — undo the death beat and hand the run back. */
+  private reviveAndResume(): void {
+    this.reviveOffer.hide();
+    this.dying = false;
+    this.player.revive();
+    // Death may have eaten a same-frame pick; hand it back while we're
+    // still paused from `resolveDeath` so combat doesn't leak a frame.
+    if (this.pendingLevelUp !== null) {
+      this.openLevelUp(this.pendingLevelUp);
+      return;
+    }
+    this.bus.emit("inputEnabled", true);
+    this.scene.resume();
+  }
+
+  /**
    * Both endings, in `main.gd`'s order: stop the world, then put a screen over
    * it. Stopping the director matters beyond tidiness — the scene is paused, so
    * a wave queued for this frame would otherwise be waiting on the far side of
    * a restart that never happens.
    *
-   * Death is the one ending that waits: it lets the swordsman collapse for a
-   * beat (issue #52) before the ad-break covers the arena. The other two put
-   * their screen up at once, exactly as the Godot port did.
+   * `"died"` only ever reaches here through `resolveDeath`, which has already
+   * paused the scene while the revive offer was up — pausing again here would
+   * warn on an already-paused Phaser scene, so only `"timeout"` still needs it.
+   *
+   * A loss also gets a real AdMob interstitial first, where monetization is
+   * available — the fake ad-break lock only appears where there was no real
+   * ad to gate on (the web build, or a failed native init).
    */
-  private endRun(outcome: RunOutcome): void {
+  private async endRun(outcome: RunOutcome): Promise<void> {
     this.director.stop();
+    // A killing blow later in this frame — or a death beat already ticking —
+    // must not open CONTINUE over the real ending.
+    this.deathBeat?.remove(false);
+    this.deathBeat = undefined;
+    this.dying = false;
+    this.pendingLevelUp = null;
     // A level-up and the last hit can land on the same frame.
     this.levelUpModal.hide();
+    // A declined/unaffordable revive offer is still on screen when "died"
+    // lands here — without this it would sit stacked under the ad-break.
+    this.reviveOffer.hide();
     this.bus.emit("inputEnabled", false);
 
     const restart = (): void => this.restart();
     // Two losses, two sets of copy (issue #37): the ad break reads the outcome
     // to tell "you died" from "the boss outlasted you." The win screen is now
     // an actual victory — you killed the thing.
-    const showScreen = (): void => {
-      if (outcome === "won") this.winScreen.show(this.run.stats, restart);
-      else this.adBreak.show(outcome, this.run.stats, restart);
-    };
-
-    // The death beat (issue #52): hold the world still (see `update`) but leave
-    // the scene running so the collapse animates, then pause and cover it. The
-    // scene must not pause *before* the timer, or the timer would never fire.
-    if (outcome === "died") {
-      this.dying = true;
-      // Drop any live cleave first: a sword swing is a 0.18s flicker, and one
-      // caught by the freeze would hang as a green wedge over the collapse for
-      // the whole beat. The rest of the world holding still reads as drama; a
-      // frozen VFX reads as a bug.
-      this.swings.each((swing) => swing.release());
-      this.time.delayedCall(GameScene.DEATH_BEAT_MS, () => {
-        this.scene.pause();
-        showScreen();
-      });
+    if (outcome === "won") {
+      this.scene.pause();
+      this.winScreen.show(this.run.stats, restart);
       return;
     }
 
-    this.scene.pause();
-    showScreen();
+    if (outcome === "timeout") this.scene.pause();
+
+    const real = monetizationSupported();
+    if (real) await ads.showInterstitial();
+    this.adBreak.show(outcome, this.run.stats, restart, { instant: real });
   }
 
   /**

@@ -5,7 +5,12 @@ import type { Player } from "./player";
 
 /** Told when a pickup lands. `GameScene` implements it. */
 export interface EngagementCollector {
-  onEngagementCollected(value: number): void;
+  /**
+   * Bank a pickup. Return `false` to leave it on the ground — a dead player
+   * or an already-ended run must not consume the gem, or a continue would
+   * find it already pooled.
+   */
+  onEngagementCollected(value: number): boolean;
 }
 
 /**
@@ -50,16 +55,23 @@ export class Engagement extends PooledSprite {
   }
 
   tick(delta: number): void {
+    // A corpse does not vacuum. The killing-blow frame still ticks drops
+    // after `playerDied`, and attracting or collecting here would either
+    // slide gems into the body or `release()` them before the collector
+    // can refuse — a continue would then find nothing.
+    if (!this.player.isAlive) return;
+
     const dx = this.player.x - this.x;
     const dy = this.player.y - this.y;
     const d = Math.hypot(dx, dy);
 
     if (d <= Engagement.COLLECT_RANGE) {
       const { value, collector } = this;
-      // Released before reporting: collecting can open the level-up modal,
-      // and a pickup still live at that moment would drift while paused.
+      // Report first so a refused collect leaves the sprite live. On
+      // success, `release()` still runs before this tick returns, so a
+      // level-up pause cannot leave a pickup drifting in range.
+      if (!collector.onEngagementCollected(value)) return;
       this.release();
-      collector.onEngagementCollected(value);
       return;
     }
 

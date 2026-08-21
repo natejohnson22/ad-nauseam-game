@@ -21,3 +21,5 @@ aso-learning/
 # Raw art packs pulled down for review — source material, not shipped assets.
 # Individual sheets get composed into src/**/assets/ when a ticket selects them.
 docs/raw_assets/
+
+.vscode/

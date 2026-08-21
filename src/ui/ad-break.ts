@@ -6,19 +6,27 @@ import type { Overlay } from "./overlay";
 type LossOutcome = Exclude<RunOutcome, "won">;
 
 /**
- * The placeholder ad-break on death — the port of `main.gd`'s `_show_ad_break`.
+ * The death/timeout screen — the port of `main.gd`'s `_show_ad_break`.
  *
- * Ported as-is and nothing more: the real ad SDK is out of scope for the map,
- * so this is `GAME OVER`, a flavour line, an empty grey frame, and the honest
- * countdown, exactly as the Godot prototype has them.
+ * Two modes, picked by the caller via `show`'s `instant` option:
+ * - **Fallback** (`instant: false` — the web build, or native with
+ *   monetization unavailable): the original joke stands exactly as ported —
+ *   `GAME OVER`, a flavour line, an empty grey frame, and the honest 5-second
+ *   countdown lock.
+ * - **Real ad already played** (`instant: true` — native, AdMob interstitial
+ *   already shown/dismissed/failed-to-load by the caller before `show` is
+ *   called): no frame, no fake lock — a plain, immediately-clickable
+ *   "Continue". The real ad already gated the moment; a second, fake one on
+ *   top of it would just be annoying.
  *
- * **The countdown is wall-clock, not the game clock.** Issue #7 required every
- * modal timer to run off the always-running UI scene, because a Phaser timer on
- * the paused `GameScene` would never fire and the player would be stuck here
- * forever. Issue #8 moving the modals to DOM dissolves that: `setInterval` does
- * not know the game is paused. It is driven off a `Date.now()` deadline rather
- * than by counting ticks, so a throttled tab can make the countdown *longer*
- * but never shorter — which is the only direction an honest countdown may err.
+ * **The fallback countdown is wall-clock, not the game clock.** Issue #7
+ * required every modal timer to run off the always-running UI scene, because
+ * a Phaser timer on the paused `GameScene` would never fire and the player
+ * would be stuck here forever. Issue #8 moving the modals to DOM dissolves
+ * that: `setInterval` does not know the game is paused. It is driven off a
+ * `Date.now()` deadline rather than by counting ticks, so a throttled tab can
+ * make the countdown *longer* but never shorter — which is the only direction
+ * an honest countdown may err.
  */
 export class AdBreak {
   /** `main.gd`'s five seconds. The lock is real; that is the joke. */
@@ -57,7 +65,12 @@ export class AdBreak {
 
   constructor(private readonly overlay: Overlay) {}
 
-  show(outcome: LossOutcome, stats: RunStats, onSkip: () => void): void {
+  show(
+    outcome: LossOutcome,
+    stats: RunStats,
+    onSkip: () => void,
+    options: { instant?: boolean } = {},
+  ): void {
     this.hide();
     const copy = AdBreak.COPY[outcome];
 
@@ -80,22 +93,31 @@ export class AdBreak {
       `Kills: ${formatNumber(stats.kills)} · ` +
       `Damage: ${formatNumber(stats.damage)}`;
 
-    const ad = document.createElement("div");
-    ad.className = "ad-frame";
-    ad.textContent = "[ YOUR AD HERE ]\n(placeholder)";
-
     const skip = document.createElement("button");
     skip.className = "action";
     skip.type = "button";
-    skip.disabled = true;
-    skip.textContent = `Skip in ${AdBreak.LOCK_SECONDS}...`;
     skip.addEventListener("click", onSkip);
 
-    modal.append(title, flavor, summary, ad, skip);
+    modal.append(title, flavor, summary);
+
+    if (options.instant) {
+      skip.textContent = "Continue";
+    } else {
+      const ad = document.createElement("div");
+      ad.className = "ad-frame";
+      ad.textContent = "[ YOUR AD HERE ]\n(placeholder)";
+      modal.appendChild(ad);
+
+      skip.disabled = true;
+      skip.textContent = `Skip in ${AdBreak.LOCK_SECONDS}...`;
+    }
+    modal.appendChild(skip);
+
     this.overlay.host.appendChild(modal);
     this.element = modal;
 
-    this.runHonestCountdown(skip);
+    if (options.instant) skip.focus();
+    else this.runHonestCountdown(skip);
   }
 
   hide(): void {
